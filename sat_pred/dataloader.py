@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+import torch
+
 from torch.utils.data import Dataset, DataLoader
 from lightning.pytorch import LightningDataModule
 
@@ -23,6 +25,9 @@ def minutes(m):
 
 def load_satellite_zarrs(zarr_path):
     """Load the satellite data"""
+    
+    zarr_path = list(zarr_path)
+    
     if isinstance(zarr_path, (list, tuple)):
         ds = xr.combine_nested(
             [_get_single_sat_data(path) for path in zarr_path],
@@ -128,8 +133,12 @@ class SatelliteDataset(Dataset):
         # Convert to arrays
         X = ds_input.data.values
         y = ds_target.data.values
+                
+        X = np.nan_to_num(X, nan=-1)
+        y = np.nan_to_num(y, nan=-1)
         
-        return X, y
+        
+        return X.astype(np.float32), y.astype(np.float32)
 
 
 class SatelliteDataModule(LightningDataModule):
@@ -205,7 +214,7 @@ class SatelliteDataModule(LightningDataModule):
         """Construct val dataloader"""
 
         dataset = self._make_dataset(*self.val_period)
-        return DataLoader(dataset, shuffle=False, **self._common_dataloader_kwargs)
+        return DataLoader(dataset, shuffle=True, **self._common_dataloader_kwargs)
 
     def test_dataloader(self):
         """Construct test dataloader"""

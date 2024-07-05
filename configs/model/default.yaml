@@ -1,0 +1,10 @@
+_target_: sat_pred.model.TrainingModule
+model: 
+  _target_: sat_pred.simvp.SimVP
+  _partial_: True
+
+num_channels: 11
+history_mins: 30
+forecast_mins: 35
+sample_freq_mins: 5
+

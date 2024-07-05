@@ -33,6 +33,21 @@ def test_find_valid_t0_times(sat_zarr_path):
     # Total                               252
     
     assert len(t0_times)==252
+    
+    t0_times = find_valid_t0_times(
+        ds, 
+        history_mins=60, 
+        forecast_mins=120, 
+        sample_freq_mins=15,
+    )
+    
+    # original 15 minute timesteps     288 / 3
+    # forecast length buffer      - (120 / 15) 
+    # history length buffer       -  (60 / 15) 
+    #                            ------------
+    # Total                               84
+    
+    assert len(t0_times)==84    
 
 
 def test_satellite_dataset(sat_zarr_path):

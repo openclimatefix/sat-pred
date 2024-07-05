@@ -60,9 +60,13 @@ def find_valid_t0_times(ds, history_mins, forecast_mins, sample_freq_mins):
 
     valid_t0_times = []
     for _, row in contiguous_t0_periods.iterrows():
-        start_dt = row["start_dt"]
-        end_dt = row["end_dt"]
-        valid_t0_times.append(pd.date_range(row["start_dt"], row["end_dt"], freq="5min"))
+        valid_t0_times.append(
+            pd.date_range(
+                row["start_dt"], 
+                row["end_dt"],  
+                freq=f"{sample_freq_mins}min"
+            )
+        )
 
     valid_t0_times = pd.to_datetime(np.concatenate(valid_t0_times))
     

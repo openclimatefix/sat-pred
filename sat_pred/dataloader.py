@@ -82,6 +82,7 @@ class SatelliteDataset(Dataset):
         history_mins: int, 
         forecast_mins: int, 
         sample_freq_mins: int,
+        preshuffle: bool = False
     ):
         """A torch Dataset for loading past and future satellite data
         
@@ -92,6 +93,7 @@ class SatelliteDataset(Dataset):
             history_mins: How many minutes of history will be used as input features
             forecast_mins: How many minutes of future will be used as target features
             sample_freq_mins: The sample frequency to use for the satellite data
+            preshuffle: Whether to shuffle the data - useful for validation
         """
         
         # Load the sat zarr file or list of files and slice the data to the given period
@@ -105,6 +107,9 @@ class SatelliteDataset(Dataset):
         # there would be a missing timestamp in the sat data required for the sample
         self.valid_t0_times = find_valid_t0_times(self.ds, history_mins, forecast_mins, sample_freq_mins)
         
+        if preshuffle:
+            self.valid_t0_times = pd.to_datetime(np.random.permutation(self.valid_t0_times))
+        
         self.history_mins = history_mins
         self.forecast_mins = forecast_mins
         self.sample_freq_mins = sample_freq_mins
@@ -115,7 +120,13 @@ class SatelliteDataset(Dataset):
 
     
     def __getitem__(self, idx):
-        t0 = self.valid_t0_times[idx]
+        if isinstance(idx, (str)):
+            t0 = pd.Timestamp(idx)
+            assert t0 in self.valid_t0_times
+        elif isinstance(idx, int):
+            t0 = self.valid_t0_times[idx]
+        else:
+            raise ValueError(f"Unrecognised type {type(idx)}")
         
         ds_sel = self.ds.sel(
             time=slice(
@@ -140,7 +151,6 @@ class SatelliteDataset(Dataset):
                 
         X = np.nan_to_num(X, nan=-1)
         y = np.nan_to_num(y, nan=-1)
-        
         
         return X.astype(np.float32), y.astype(np.float32)
 
@@ -198,7 +208,7 @@ class SatelliteDataModule(LightningDataModule):
             persistent_workers=False,
         )
 
-    def _make_dataset(self, start_date, end_date):
+    def _make_dataset(self, start_date, end_date, preshuffle=False):
         dataset = SatelliteDataset(
             self.zarr_path,
             start_date,
@@ -206,6 +216,7 @@ class SatelliteDataModule(LightningDataModule):
             self.history_mins, 
             self.forecast_mins, 
             self.sample_freq_mins,
+            preshuffle=preshuffle,
         )
         return dataset
         
@@ -217,8 +228,8 @@ class SatelliteDataModule(LightningDataModule):
     def val_dataloader(self):
         """Construct val dataloader"""
 
-        dataset = self._make_dataset(*self.val_period)
-        return DataLoader(dataset, shuffle=True, **self._common_dataloader_kwargs)
+        dataset = self._make_dataset(*self.val_period, preshuffle=True)
+        return DataLoader(dataset, shuffle=False, **self._common_dataloader_kwargs)
 
     def test_dataloader(self):
         """Construct test dataloader"""

@@ -31,4 +31,4 @@ print_config: True
 # disable python warnings if they annoy you
 ignore_warnings: True
 
-seed: 2727831
+seed: 27267831

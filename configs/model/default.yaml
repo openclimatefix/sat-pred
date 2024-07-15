@@ -4,7 +4,7 @@ model:
   _partial_: True
 
 num_channels: 11
-history_mins: 30
-forecast_mins: 35
-sample_freq_mins: 5
+history_mins: 165
+forecast_mins: 180
+sample_freq_mins: 15
 

@@ -15,7 +15,8 @@ import wandb
 import yaml
 import numpy as np
 import matplotlib.pyplot as plt
-
+import wandb
+from torch.utils.data import default_collate
 
 
 logger = logging.getLogger(__name__)
@@ -81,13 +82,46 @@ class AdamW:
         """Return optimizer"""
         return torch.optim.AdamW(model.parameters(), lr=self.lr, **self.kwargs)
 
+    
+class AdamWReduceLROnPlateau:
+    """AdamW optimizer and reduce on plateau scheduler"""
+
+    def __init__(
+        self, lr=0.0005, patience=10, factor=0.2, threshold=2e-4, step_freq=None, **opt_kwargs
+    ):
+        """AdamW optimizer and reduce on plateau scheduler"""
+        self.lr = lr
+        self.patience = patience
+        self.factor = factor
+        self.threshold = threshold
+        self.step_freq = step_freq
+        self.opt_kwargs = opt_kwargs
+
+    def __call__(self, model):
+
+        opt = torch.optim.AdamW(
+            model.parameters(), lr=self.lr, **self.opt_kwargs
+        )
+        sch = {
+            "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
+                opt,
+                factor=self.factor,
+                patience=self.patience,
+                threshold=self.threshold,
+            ),
+            "monitor": "MAE/val",
+        }
+
+        return [opt], [sch]
+    
 
 def plot_sat_images(y, y_hat, channel_inds=[8, 1], n_frames=6):
     y = y.cpu().numpy()
     y_hat = y_hat.cpu().numpy()
         
-    y[y<=0] = np.nan
-    y_hat[y_hat<=0] = np.nan
+    mask = y<0
+    y[mask] = np.nan
+    y_hat[mask] = np.nan
     
     seq_len = y.shape[1]
     
@@ -118,6 +152,32 @@ def plot_sat_images(y, y_hat, channel_inds=[8, 1], n_frames=6):
     plt.xlabel("Frame number")
     plt.tight_layout()
     return fig
+
+
+def upload_video(y, y_hat, video_name, channel_nums=[8, 1], fps=1):
+    y = y.cpu().numpy()
+    y_hat = y_hat.cpu().numpy()
+    
+    mask = y<0
+    y[mask] = 0
+    y_hat[mask] = 0
+    
+    channel_frames = []
+    
+    for channel_num in channel_nums:
+        y_frames = y.transpose(1,0,2,3)[:, channel_num:channel_num+1, ::-1, ::-1]
+        y_hat_frames = y_hat.transpose(1,0,2,3)[:, channel_num:channel_num+1, ::-1, ::-1]
+        channel_frames.append(
+            np.concatenate(
+                [y_hat_frames, y_frames], 
+                axis=3
+            )
+        )
+        
+    channel_frames = np.concatenate(channel_frames, axis=2)
+    channel_frames = channel_frames.clip(0, None)
+    channel_frames = np.repeat(channel_frames, 3, axis=1)*255
+    wandb.log({video_name: wandb.Video(channel_frames, fps=fps)})
     
     
 class TrainingModule(pl.LightningModule):
@@ -130,7 +190,7 @@ class TrainingModule(pl.LightningModule):
         history_mins: int,
         forecast_mins: int, 
         sample_freq_mins: int,
-        optimizer = AdamW(),
+        optimizer = AdamWReduceLROnPlateau(),
     ):
         """tbc
 
@@ -158,10 +218,19 @@ class TrainingModule(pl.LightningModule):
             forecast_len=self.forecast_len,
         )
 
+    def _filter_missing_targets(self, y, y_hat):
+        
+        mask = y==-1
+        y = y[~mask]
+        y_hat = y_hat[~mask]
+        return y, y_hat
+        
 
     def _calculate_common_losses(self, y, y_hat):
         """Calculate losses common to train, test, and val"""
         
+        
+        y, y_hat = self._filter_missing_targets(y, y_hat)
         losses = {}
 
         # calculate mse, mae
@@ -177,25 +246,11 @@ class TrainingModule(pl.LightningModule):
 
         return losses
 
-    def _step_mae_and_mse(self, y, y_hat, dict_key_root):
-        """Calculate the MSE and MAE at each forecast step"""
-        losses = {}
-
-        mse_each_step = torch.mean((y_hat - y) ** 2, dim=0)
-        mae_each_step = torch.mean(torch.abs(y_hat - y), dim=0)
-
-        losses.update({f"MSE_{dict_key_root}/step_{i:03}": m for i, m in enumerate(mse_each_step)})
-        losses.update({f"MAE_{dict_key_root}/step_{i:03}": m for i, m in enumerate(mae_each_step)})
-
-        return losses
 
     def _calculate_val_losses(self, y, y_hat):
         """Calculate additional validation losses"""
 
         losses = {}
-
-        # Log the loss at each time horizon
-        #losses.update(self._step_mae_and_mse(y, y_hat, dict_key_root="horizon"))
 
         return losses
 
@@ -238,7 +293,7 @@ class TrainingModule(pl.LightningModule):
 
         self._training_accumulate_log(batch, batch_idx, losses, y_hat)
 
-        return losses["MSE/train"]
+        return losses["MAE/train"]
 
     def validation_step(self, batch: dict, batch_idx):
         """Run validation step"""
@@ -257,22 +312,36 @@ class TrainingModule(pl.LightningModule):
             on_epoch=True,
         )
 
-        accum_batch_num = batch_idx // self.trainer.accumulate_grad_batches
-        
-        if batch_idx in [0, 1]:
-            fig = plot_sat_images(y[0], y_hat[0], channel_inds=[8, 1, 2], n_frames=6)
-            
-            plot_name = f"val_samples/batch_idx_{batch_idx}"
-
-            self.logger.experiment.log({plot_name: wandb.Image(fig)})
-
-            plt.close(fig)
-
         return logged_losses
+        
+    def on_validation_epoch_start(self):
+        
+        val_dataset = self.trainer.val_dataloaders.dataset
+        
+        dates = ["2023-06-01T12:00", "2023-04-05T09:00", "2023-08-05T16:00"]
+        
+        X, y = default_collate([val_dataset[date]for date in dates])
+        X = X.to(self.device)
+        y = y.to(self.device)
 
+        y_hat = self.model(X)
+                               
+        for i in range(len(dates)):
+                               
+            plot_name = f"val_sample_plots/{dates[i]}"
+            fig = plot_sat_images(y[i], y_hat[i], channel_inds=[8, 1, 2], n_frames=6)
+            self.logger.experiment.log({plot_name: wandb.Image(fig)})
+            plt.close(fig)
+            
+            video_name = f"val_sample_videos/{dates[i]}_channel_8"
+            upload_video(y[i], y_hat[i], video_name, channel_nums=[8])
+            
+            video_name = f"val_sample_videos/{dates[i]}_channel_1"
+            upload_video(y[i], y_hat[i], video_name, channel_nums=[1])
+        
+        
     def on_validation_epoch_end(self):
         """Run on epoch end"""
-
         return
 
 

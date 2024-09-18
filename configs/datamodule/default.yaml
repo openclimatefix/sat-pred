@@ -1,18 +1,17 @@
-_target_: sat_pred.dataloader.SatelliteDataModule
+_target_: cloudcasting.dataset.SatelliteDataModule
 
-zarr_path:
-  - /mnt/disks/nwp_rechunk/sat/2019_nonhrv.zarr
-  - /mnt/disks/nwp_rechunk/sat/2020_nonhrv.zarr
-  - /mnt/disks/nwp_rechunk/sat/2021_nonhrv.zarr
-  #- /mnt/disks/nwp_rechunk/sat/2022_nonhrv.zarr
-  - /mnt/disks/nwp_rechunk/sat/2023_nonhrv.zarr
-
+zarr_path: 
+  - /mnt/disks/sat_data/2019_training_nonhrv.zarr
+  - /mnt/disks/sat_data/2020_training_nonhrv.zarr
+  - /mnt/disks/sat_data/2021_training_nonhrv.zarr
+  - /mnt/disks/sat_data/2022_training_nonhrv.zarr
 history_mins: 165
 forecast_mins: 180
 sample_freq_mins: 15
 
-train_period: ["2019-01-01", "2022-01-01"]
-val_period: ["2023-01-01", "2023-12-31"]
-num_workers: 16
+train_period: ["2019-01-01 00:00", "2021-12-31 23:55"]
+val_period: ["2022-01-01 00:00", "2022-12-31 23:55"]
+num_workers: 12
 prefetch_factor: 2
 batch_size: 1
+nan_to_num: true

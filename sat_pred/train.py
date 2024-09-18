@@ -1,4 +1,14 @@
 """Training"""
+
+try:
+    import torch.multiprocessing as mp
+
+    mp.set_start_method("spawn", force=True)
+    mp.set_sharing_strategy("file_system")
+except RuntimeError:
+    pass
+
+
 import os
 from typing import Optional
 
@@ -17,12 +27,54 @@ from lightning.pytorch.loggers.wandb import WandbLogger
 from omegaconf import DictConfig, OmegaConf
 
 
+import rich.syntax
+import rich.tree
+from lightning.pytorch.utilities import rank_zero_only
 
 torch.set_default_dtype(torch.float32)
 
 
+@rank_zero_only
+def print_config(
+    config: DictConfig,
+    fields: list[str] = (
+        "trainer",
+        "model",
+        "datamodule",
+        "callbacks",
+        "logger",
+        "seed",
+    ),
+    resolve: bool = True,
+) -> None:
+    """Prints content of DictConfig using Rich library and its tree structure.
+
+    Args:
+        config (DictConfig): Configuration composed by Hydra.
+        fields (Sequence[str], optional): Determines which main fields from config will
+        be printed and in what order.
+        resolve (bool, optional): Whether to resolve reference fields of DictConfig.
+    """
+
+    style = "dim"
+    tree = rich.tree.Tree("CONFIG", style=style, guide_style=style)
+
+    for field in fields:
+        branch = tree.add(field, style=style, guide_style=style)
+
+        config_section = config.get(field)
+        branch_content = str(config_section)
+        if isinstance(config_section, DictConfig):
+            branch_content = OmegaConf.to_yaml(config_section, resolve=resolve)
+
+        branch.add(rich.syntax.Syntax(branch_content, "yaml"))
+
+    rich.print(tree)
+
+
+
 @hydra.main(config_path="../configs/", config_name="config.yaml", version_base="1.2")
-def train(config: DictConfig) -> Optional[float]:
+def train(config: DictConfig):
     """Contains training pipeline.
 
     Instantiates all PyTorch Lightning objects from config.
@@ -34,12 +86,15 @@ def train(config: DictConfig) -> Optional[float]:
         Optional[float]: Metric score for hyperparameter optimization.
     """
 
+    print_config(config)
+
     # Set seed for random number generators in pytorch, numpy and python.random
     if "seed" in config:
         seed_everything(config.seed, workers=True)
 
     # Init lightning datamodule
     datamodule: LightningDataModule = hydra.utils.instantiate(config.datamodule)
+    datamodule.zarr_path = list(datamodule.zarr_path)
 
     # Init lightning model
     model: LightningModule = hydra.utils.instantiate(config.model)

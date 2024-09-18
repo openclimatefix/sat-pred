@@ -1,5 +1,4 @@
 ocf_blosc2
-ocf_datapipes
 lightning
 torch 
 torchvision 
@@ -9,5 +8,6 @@ xarray
 dask[distributed]
 zarr
 typer
-gcsfs
-
+cloudcasting
+hydra-core
+matplotlib

@@ -26,6 +26,20 @@ if torch.cuda.is_available():
     activities.append(torch.profiler.ProfilerActivity.CUDA)
 
 
+def check_nan_and_finite(X, y, y_hat):
+    if X is not None:
+        assert not np.isnan(X.cpu().numpy()).any(), "NaNs in X"
+        assert np.isfinite(X.cpu().numpy()).all(), "infs in X"
+    
+    if y is not None:
+        assert not np.isnan(y.cpu().numpy()).any(), "NaNs in y"
+        assert np.isfinite(y.cpu().numpy()).all(), "infs in y"
+
+    if y_hat is not None:
+        assert not np.isnan(y_hat.detach().cpu().numpy()).any(), "NaNs in y_hat"
+        assert np.isfinite(y_hat.detach().cpu().numpy()).all(), "infs in y_hat"
+
+
 class DictListAccumulator:
     """Abstract class for accumulating dictionaries of lists"""
 
@@ -116,8 +130,8 @@ class AdamWReduceLROnPlateau:
     
 
 def plot_sat_images(y, y_hat, channel_inds=[8, 1], n_frames=6):
-    y = y.cpu().numpy()
-    y_hat = y_hat.cpu().numpy()
+    y = y.cpu().numpy().copy()
+    y_hat = y_hat.cpu().numpy().copy()
         
     mask = y<0
     y[mask] = np.nan
@@ -141,7 +155,6 @@ def plot_sat_images(y, y_hat, channel_inds=[8, 1], n_frames=6):
         axes[p].imshow(ims, cmap='gist_grey', interpolation='nearest', origin="lower", vmin=0, vmax=1)
         axes[p].set_title(f"Channel number : {channel_ind}")
     
-    xlabels = []
     ylabels = ["y", "y_hat"]
     y_ticks = np.array([0.5, 1.5])*y.shape[2]
     
@@ -155,33 +168,27 @@ def plot_sat_images(y, y_hat, channel_inds=[8, 1], n_frames=6):
 
 
 def upload_video(y, y_hat, video_name, channel_nums=[8, 1], fps=1):
+    
+    check_nan_and_finite(None, y, y_hat)
+
     y = y.cpu().numpy()
     y_hat = y_hat.cpu().numpy()
-    
-    mask = y<0
-    y[mask] = 0
-    y_hat[mask] = 0
-    
+
     channel_frames = []
     
     for channel_num in channel_nums:
         y_frames = y.transpose(1,0,2,3)[:, channel_num:channel_num+1, ::-1, ::-1]
         y_hat_frames = y_hat.transpose(1,0,2,3)[:, channel_num:channel_num+1, ::-1, ::-1]
-        channel_frames.append(
-            np.concatenate(
-                [y_hat_frames, y_frames], 
-                axis=3
-            )
-        )
+        channel_frames.append(np.concatenate([y_hat_frames, y_frames], axis=3))
         
     channel_frames = np.concatenate(channel_frames, axis=2)
-    channel_frames = channel_frames.clip(0, None)
+    channel_frames = channel_frames.clip(0, 1)
     channel_frames = np.repeat(channel_frames, 3, axis=1)*255
+    channel_frames = channel_frames.astype(np.uint8)
     wandb.log({video_name: wandb.Video(channel_frames, fps=fps)})
     
     
 class TrainingModule(pl.LightningModule):
-    """Abstract base class for PVNet submodels"""
 
     def __init__(
         self,
@@ -218,24 +225,24 @@ class TrainingModule(pl.LightningModule):
             forecast_len=self.forecast_len,
         )
 
-    def _filter_missing_targets(self, y, y_hat):
-        
+    @staticmethod
+    def _filter_missing_targets(y, y_hat):
         mask = y==-1
-        y = y[~mask]
-        y_hat = y_hat[~mask]
-        return y, y_hat
+        return y[~mask], y_hat[~mask]
         
-
-    def _calculate_common_losses(self, y, y_hat):
+    @staticmethod
+    def _calculate_common_losses(y, y_hat):
         """Calculate losses common to train, test, and val"""
         
-        
-        y, y_hat = self._filter_missing_targets(y, y_hat)
+        y, y_hat = TrainingModule._filter_missing_targets(y, y_hat)
         losses = {}
 
         # calculate mse, mae
         mse_loss = F.mse_loss(y_hat, y)
         mae_loss = F.l1_loss(y_hat, y)
+
+        assert not np.isnan(float(mae_loss)), "MAE loss is NaN"
+        assert not np.isnan(float(mse_loss)), "MSE loss is NaN"
 
         losses.update(
             {
@@ -246,18 +253,11 @@ class TrainingModule(pl.LightningModule):
 
         return losses
 
-
     def _calculate_val_losses(self, y, y_hat):
         """Calculate additional validation losses"""
 
         losses = {}
 
-        return losses
-
-    def _calculate_test_losses(self, y, y_hat):
-        """Calculate additional test losses"""
-        # No additional test losses
-        losses = {}
         return losses
 
     def _training_accumulate_log(self, batch, batch_idx, losses, y_hat):
@@ -288,6 +288,8 @@ class TrainingModule(pl.LightningModule):
         
         y_hat = self.model(X)
 
+        check_nan_and_finite(X, y, y_hat)
+
         losses = self._calculate_common_losses(y, y_hat)
         losses = {f"{k}/train": v for k, v in losses.items()}
 
@@ -300,6 +302,8 @@ class TrainingModule(pl.LightningModule):
         X, y = batch
         
         y_hat = self.model(X)
+
+        check_nan_and_finite(X, y, y_hat)
     
         losses = self._calculate_common_losses(y, y_hat)
         losses.update(self._calculate_val_losses(y, y_hat))
@@ -318,13 +322,16 @@ class TrainingModule(pl.LightningModule):
         
         val_dataset = self.trainer.val_dataloaders.dataset
         
-        dates = ["2023-06-01T12:00", "2023-04-05T09:00", "2023-08-05T16:00"]
+        dates = [val_dataset.t0_times[i] for i in [0,1,2]]
         
         X, y = default_collate([val_dataset[date]for date in dates])
         X = X.to(self.device)
         y = y.to(self.device)
 
         y_hat = self.model(X)
+
+        assert val_dataset.nan_to_num, val_dataset.nan_to_num
+        check_nan_and_finite(X, y, y_hat)
                                
         for i in range(len(dates)):
                                
@@ -332,18 +339,17 @@ class TrainingModule(pl.LightningModule):
             fig = plot_sat_images(y[i], y_hat[i], channel_inds=[8, 1, 2], n_frames=6)
             self.logger.experiment.log({plot_name: wandb.Image(fig)})
             plt.close(fig)
-            
-            video_name = f"val_sample_videos/{dates[i]}_channel_8"
-            upload_video(y[i], y_hat[i], video_name, channel_nums=[8])
-            
-            video_name = f"val_sample_videos/{dates[i]}_channel_1"
-            upload_video(y[i], y_hat[i], video_name, channel_nums=[1])
-        
+
+            for channel_num in [1, 8]:
+                channel_name = val_dataset.ds.variable.values[channel_num]
+                video_name = f"val_sample_videos/{dates[i]}_{channel_name}"
+
+                upload_video(y[i], y_hat[i], video_name, channel_nums=[channel_num])
+                
         
     def on_validation_epoch_end(self):
         """Run on epoch end"""
         return
-
 
     def configure_optimizers(self):
         """Configure the optimizers using learning rate found with LR finder if used"""

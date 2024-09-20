@@ -17,6 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import wandb
 from torch.utils.data import default_collate
+from sat_pred.ssim import SSIM3D
 
 
 logger = logging.getLogger(__name__)
@@ -123,7 +124,7 @@ class AdamWReduceLROnPlateau:
                 patience=self.patience,
                 threshold=self.threshold,
             ),
-            "monitor": "MAE/val",
+            "monitor": f"{model.target_loss}/val",
         }
 
         return [opt], [sch]
@@ -197,12 +198,15 @@ class TrainingModule(pl.LightningModule):
         history_mins: int,
         forecast_mins: int, 
         sample_freq_mins: int,
+        target_loss: float = "MAE",
         optimizer = AdamWReduceLROnPlateau(),
     ):
         """tbc
 
         """
         super().__init__()
+        
+        assert target_loss in ["MAE", "MSE", "SSIM"]
 
         self._optimizer = optimizer
 
@@ -216,6 +220,7 @@ class TrainingModule(pl.LightningModule):
 
         self.history_len = history_mins // sample_freq_mins + 1
         self.forecast_len = (forecast_mins) // sample_freq_mins
+        self.target_loss = target_loss
 
         self._accumulated_metrics = MetricAccumulator()
         
@@ -224,30 +229,30 @@ class TrainingModule(pl.LightningModule):
             history_len=self.history_len,
             forecast_len=self.forecast_len,
         )
+        
+        self.ssim_func = SSIM3D()
 
     @staticmethod
-    def _filter_missing_targets(y, y_hat):
+    def _minus_one_to_nan(y, y_hat):
         mask = y==-1
-        return y[~mask], y_hat[~mask]
+        y[mask] = torch.nan
+        y_hat[mask] = torch.nan
         
-    @staticmethod
-    def _calculate_common_losses(y, y_hat):
+    def _calculate_common_losses(self, y, y_hat):
         """Calculate losses common to train, test, and val"""
         
-        y, y_hat = TrainingModule._filter_missing_targets(y, y_hat)
         losses = {}
 
         # calculate mse, mae
-        mse_loss = F.mse_loss(y_hat, y)
-        mae_loss = F.l1_loss(y_hat, y)
-
-        assert not np.isnan(float(mae_loss)), "MAE loss is NaN"
-        assert not np.isnan(float(mse_loss)), "MSE loss is NaN"
+        mse_loss = torch.nanmean(F.mse_loss(y_hat, y, reduction="none"))
+        mae_loss = torch.nanmean(F.l1_loss(y_hat, y, reduction="none"))
+        #ssim_loss = torch.nanmean(1-self.ssim_func(y_hat, y)) # need to maximise SSIM
 
         losses.update(
             {
                 "MSE": mse_loss,
                 "MAE": mae_loss,
+                #"SSIM": ssim_loss,
             }
         )
 
@@ -289,13 +294,15 @@ class TrainingModule(pl.LightningModule):
         y_hat = self.model(X)
 
         check_nan_and_finite(X, y, y_hat)
+        
+        self._minus_one_to_nan(y, y_hat)
 
         losses = self._calculate_common_losses(y, y_hat)
         losses = {f"{k}/train": v for k, v in losses.items()}
 
         self._training_accumulate_log(batch, batch_idx, losses, y_hat)
 
-        return losses["MAE/train"]
+        return losses[f"{self.target_loss}/train"]
 
     def validation_step(self, batch: dict, batch_idx):
         """Run validation step"""
@@ -304,6 +311,8 @@ class TrainingModule(pl.LightningModule):
         y_hat = self.model(X)
 
         check_nan_and_finite(X, y, y_hat)
+        
+        self._minus_one_to_nan(y, y_hat)
     
         losses = self._calculate_common_losses(y, y_hat)
         losses.update(self._calculate_val_losses(y, y_hat))

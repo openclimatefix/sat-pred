@@ -1,10 +1,11 @@
+from cloudcasting.validation import validate
+from cloudcasting.models import AbstractModel
+
 import glob
 
 import hydra
 import torch
 from pyaml_env import parse_config
-from cloudcasting.models import AbstractModel
-from cloudcasting.validation import validate
 
 
 checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/u12kiwmy"
@@ -99,16 +100,19 @@ class MLModel(AbstractModel):
 
 
     
-model = MLModel(checkpoint)
 
 
-validate(
-    model=model,
-    data_path="/mnt/disks/sat_data/2022_test_nonhrv.zarr",
-    wandb_project_name=WANDB_PROJECT,
-    wandb_run_name=WANDB_RUN_NAME,
-    batch_size = 1,
-    num_workers = 0,
-    batch_limit = 20,  # We limit the number of batches to 20 for this example
-    nan_to_num = model.data_config['nan_to_num']
-)
+if __name__=="__main__":
+    
+    model = MLModel(checkpoint)
+    
+    validate(
+        model=model,
+        data_path="/mnt/disks/sat_data/2022_test_nonhrv.zarr",
+        wandb_project_name=WANDB_PROJECT,
+        wandb_run_name=WANDB_RUN_NAME,
+        batch_size = 2,
+        num_workers = 12,
+        batch_limit = None,
+        nan_to_num = model.data_config['nan_to_num'],
+    )

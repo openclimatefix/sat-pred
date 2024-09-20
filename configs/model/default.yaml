@@ -7,4 +7,5 @@ num_channels: 11
 history_mins: 165
 forecast_mins: 180
 sample_freq_mins: 15
+target_loss: MAE
 

@@ -1,13 +1,8 @@
 """Training"""
 
-try:
+if __name__ == "__main__":
     import torch.multiprocessing as mp
-
     mp.set_start_method("spawn", force=True)
-    mp.set_sharing_strategy("file_system")
-except RuntimeError:
-    pass
-
 
 import os
 from typing import Optional
@@ -152,5 +147,5 @@ def train(config: DictConfig):
     trainer.fit(model=model, datamodule=datamodule)
     
     
-if __name__ == "__main__":
+if __name__ == "__main__":    
     train()

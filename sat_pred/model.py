@@ -41,50 +41,6 @@ def check_nan_and_finite(X, y, y_hat):
         assert np.isfinite(y_hat.detach().cpu().numpy()).all(), "infs in y_hat"
 
 
-class DictListAccumulator:
-    """Abstract class for accumulating dictionaries of lists"""
-
-    @staticmethod
-    def _dict_list_append(d1, d2):
-        for k, v in d2.items():
-            d1[k].append(v)
-
-    @staticmethod
-    def _dict_init_list(d):
-        return {k: [v] for k, v in d.items()}
-    
-    
-class MetricAccumulator(DictListAccumulator):
-    """Dictionary of metrics accumulator.
-
-    A class for accumulating, and finding the mean of logging metrics when using grad
-    accumulation and the batch size is small.
-
-    Attributes:
-        _metrics (Dict[str, list[float]]): Dictionary containing lists of metrics.
-    """
-
-    def __init__(self):
-        """Dictionary of metrics accumulator."""
-        self._metrics = {}
-
-    def __bool__(self):
-        return self._metrics != {}
-
-    def append(self, loss_dict: dict[str, float]):
-        """Append lictionary of metrics to self"""
-        if not self:
-            self._metrics = self._dict_init_list(loss_dict)
-        else:
-            self._dict_list_append(self._metrics, loss_dict)
-
-    def flush(self) -> dict[str, float]:
-        """Calculate mean of all accumulated metrics and clear"""
-        mean_metrics = {k: np.mean(v) for k, v in self._metrics.items()}
-        self._metrics = {}
-        return mean_metrics
-    
-
 class AdamW:
     """AdamW optimizer"""
 
@@ -128,49 +84,11 @@ class AdamWReduceLROnPlateau:
         }
 
         return [opt], [sch]
-    
-
-def plot_sat_images(y, y_hat, channel_inds=[8, 1], n_frames=6):
-    y = y.cpu().numpy().copy()
-    y_hat = y_hat.cpu().numpy().copy()
-        
-    mask = y<0
-    y[mask] = np.nan
-    y_hat[mask] = np.nan
-    
-    seq_len = y.shape[1]
-    
-    n_frames = min(n_frames, seq_len)
-    plot_frames = np.linspace(0, seq_len-1, n_frames).astype(int)
-    
-    fig, axes = plt.subplots(len(channel_inds), 1, sharex=True, sharey=True)
-    
-    for p, channel_ind in enumerate(channel_inds):
-
-        y_frames = [y[channel_ind, f_num][:, ::-1] for f_num in plot_frames]
-        y_hat_frames = [y_hat[channel_ind, f_num][:, ::-1] for f_num in plot_frames]
-
-        ims = np.concatenate([np.concatenate(y_frames, axis=1), np.concatenate(y_hat_frames, axis=1)], axis=0) 
-
-        vmax = min(ims.max(), 1)
-        axes[p].imshow(ims, cmap='gist_grey', interpolation='nearest', origin="lower", vmin=0, vmax=1)
-        axes[p].set_title(f"Channel number : {channel_ind}")
-    
-    ylabels = ["y", "y_hat"]
-    y_ticks = np.array([0.5, 1.5])*y.shape[2]
-    
-    x_ticks = (np.arange(n_frames)+0.5)*y.shape[3]
-    
-    plt.yticks(ticks=y_ticks, labels=ylabels)
-    plt.xticks(ticks=x_ticks, labels=plot_frames)
-    plt.xlabel("Frame number")
-    plt.tight_layout()
-    return fig
 
 
 def upload_video(y, y_hat, video_name, channel_nums=[8, 1], fps=1):
     
-    check_nan_and_finite(None, y, y_hat)
+    #check_nan_and_finite(None, y, y_hat)
 
     y = y.cpu().numpy()
     y_hat = y_hat.cpu().numpy()
@@ -221,8 +139,6 @@ class TrainingModule(pl.LightningModule):
         self.history_len = history_mins // sample_freq_mins + 1
         self.forecast_len = (forecast_mins) // sample_freq_mins
         self.target_loss = target_loss
-
-        self._accumulated_metrics = MetricAccumulator()
         
         self.model = model(
             num_channels=num_channels,
@@ -233,26 +149,26 @@ class TrainingModule(pl.LightningModule):
         self.ssim_func = SSIM3D()
 
     @staticmethod
-    def _minus_one_to_nan(y, y_hat):
-        mask = y==-1
-        y[mask] = torch.nan
-        y_hat[mask] = torch.nan
+    def _minus_one_to_nan(y):
+        y[y==-1] = torch.nan
         
     def _calculate_common_losses(self, y, y_hat):
         """Calculate losses common to train, test, and val"""
         
         losses = {}
-
+            
+        
         # calculate mse, mae
+        
         mse_loss = torch.nanmean(F.mse_loss(y_hat, y, reduction="none"))
         mae_loss = torch.nanmean(F.l1_loss(y_hat, y, reduction="none"))
-        #ssim_loss = torch.nanmean(1-self.ssim_func(y_hat, y)) # need to maximise SSIM
+        ssim_loss = torch.nanmean(1-self.ssim_func(y_hat, y)) # need to maximise SSIM
 
         losses.update(
             {
                 "MSE": mse_loss,
                 "MAE": mae_loss,
-                #"SSIM": ssim_loss,
+                "SSIM": ssim_loss,
             }
         )
 
@@ -265,69 +181,61 @@ class TrainingModule(pl.LightningModule):
 
         return losses
 
-    def _training_accumulate_log(self, batch, batch_idx, losses, y_hat):
-        """Internal function to accumulate training batches and log results.
-
-        This is used when accummulating grad batches. Should make the variability in logged training
-        step metrics indpendent on whether we accumulate N batches of size B or just use a larger
-        batch size of N*B with no accumulaion.
-        """
-
-        losses = {k: v.detach().cpu() for k, v in losses.items()}
-        y_hat = y_hat.detach().cpu()
-
-        self._accumulated_metrics.append(losses)
-
-        if not self.trainer.fit_loop._should_accumulate():
-            losses = self._accumulated_metrics.flush()
-
-            self.log_dict(
-                losses,
-                on_step=True,
-                on_epoch=True,
-            )
-
     def training_step(self, batch, batch_idx):
         """Run training step"""
+        
         X, y = batch
         
         y_hat = self.model(X)
+        del X
 
-        check_nan_and_finite(X, y, y_hat)
+        #check_nan_and_finite(X, y, y_hat)
         
-        self._minus_one_to_nan(y, y_hat)
+        # Replace the -1 (filled) values in y with NaNs 
+        # This operation is in-place
+        self._minus_one_to_nan(y)
 
         losses = self._calculate_common_losses(y, y_hat)
         losses = {f"{k}/train": v for k, v in losses.items()}
 
-        self._training_accumulate_log(batch, batch_idx, losses, y_hat)
+        self.log_dict(
+            {k: v.detach().cpu() for k, v in losses.items()},
+            on_step=True,
+            on_epoch=False,
+        )
 
         return losses[f"{self.target_loss}/train"]
 
     def validation_step(self, batch: dict, batch_idx):
         """Run validation step"""
         X, y = batch
-        
         y_hat = self.model(X)
+        del X
 
-        check_nan_and_finite(X, y, y_hat)
+        #check_nan_and_finite(X, y, y_hat)
         
-        self._minus_one_to_nan(y, y_hat)
+        # Replace the -1 (filled) values in y with NaNs 
+        # This operation is in-place        
+        self._minus_one_to_nan(y)
     
         losses = self._calculate_common_losses(y, y_hat)
         losses.update(self._calculate_val_losses(y, y_hat))
 
-        logged_losses = {f"{k}/val": v for k, v in losses.items()}
+        losses = {f"{k}/val": v for k, v in losses.items()}
 
         self.log_dict(
-            logged_losses,
+            {k: v.item() for k, v in losses.items()},
             on_step=False,
             on_epoch=True,
         )
 
-        return logged_losses
+        return
         
     def on_validation_epoch_start(self):
+        
+        print("\n VAL START")
+        
+        return
         
         val_dataset = self.trainer.val_dataloaders.dataset
         
@@ -336,18 +244,14 @@ class TrainingModule(pl.LightningModule):
         X, y = default_collate([val_dataset[date]for date in dates])
         X = X.to(self.device)
         y = y.to(self.device)
-
-        y_hat = self.model(X)
+        
+        with torch.no_grad():
+            y_hat = self.model(X)
 
         assert val_dataset.nan_to_num, val_dataset.nan_to_num
-        check_nan_and_finite(X, y, y_hat)
+        #check_nan_and_finite(X, y, y_hat)
                                
         for i in range(len(dates)):
-                               
-            plot_name = f"val_sample_plots/{dates[i]}"
-            fig = plot_sat_images(y[i], y_hat[i], channel_inds=[8, 1, 2], n_frames=6)
-            self.logger.experiment.log({plot_name: wandb.Image(fig)})
-            plt.close(fig)
 
             for channel_num in [1, 8]:
                 channel_name = val_dataset.ds.variable.values[channel_num]
@@ -355,10 +259,19 @@ class TrainingModule(pl.LightningModule):
 
                 upload_video(y[i], y_hat[i], video_name, channel_nums=[channel_num])
                 
-        
     def on_validation_epoch_end(self):
-        """Run on epoch end"""
-        return
+        print("\n VAL END")
+        # Clear cache at the end of validation
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
+    def on_train_epoch_start(self):
+        print("\n TRAIN START")
+            
+    def on_train_epoch_end(self):
+        print("\n TRAIN END")
+        
+        
 
     def configure_optimizers(self):
         """Configure the optimizers using learning rate found with LR finder if used"""

@@ -1,6 +1,72 @@
 """SSIM metric that can be run on sequences of images
 
-Adapted from: https://pytorch.org/ignite/generated/ignite.metrics.SSIM.html
+Adapted from [1] to match more closely to [2]
+
+[1] https://pytorch.org/ignite/generated/ignite.metrics.SSIM.html to match more closely
+[2] https://scikit-image.org/docs/stable/api/skimage.metrics.html#skimage.metrics.structural_similarity
+
+Example of equivalence:
+
+```
+from skimage.metrics import structural_similarity
+import numpy as np
+from sat_pred.ssim import SSIM3D
+import torch
+torch.manual_seed(1)
+
+# Create some sample data
+n_samples = 1   # only 1 sample so compatible with skimage function
+n_channels = 5
+n_timesteps = 1 # only 1 time step so compatible with skimage function
+
+x_dim = 400
+y_dim = 700
+
+y = torch.rand((n_samples, n_channels, n_timesteps, x_dim, y_dim))
+y_hat = torch.rand((n_samples, n_channels, n_timesteps, x_dim, y_dim))
+
+
+# Compute SSIM map with this class and squeeze out the extra dimensions
+ssim_map1 = SSIM3D()(y_hat, y).numpy().squeeze((0,2))
+
+# Compute SSIM map with skimage
+_, ssim_map2 = structural_similarity(
+    y_hat[0, :, 0].numpy(), # remove extra dimensions and convert to numpy
+    y[0, :, 0].numpy(), # remove extra dimensions and convert to numpy
+    channel_axis=0, 
+    # The settings below are required to match the two calculations
+    data_range=1,
+    gaussian_weights=True,
+    full=True, 
+    sigma=1.5,
+    use_sample_covariance=False,
+)
+
+
+# The skimage version of SSIM uses reflection padding when applying the gaussian kernel
+# whilst our version uses zero padding. We expect the two versions to be the same 
+def trim_border(x, num_pixels):
+    return x[..., num_pixels:x.shape[-2]-num_pixels, num_pixels:x.shape[-1]-num_pixels]
+
+# If we don't trim the border ~96% of the SSIM values are the same
+np.isclose(
+    trim_border(ssim_map1, num_pixels=0),
+    trim_border(ssim_map2, num_pixels=0),
+    atol=1e-05
+).mean()
+# >> 0.9610714285714286
+
+# If we do trim the border all of the SSIM values are the same
+
+# In both calculations we have used a window size of 11, so a padding size of 11//2 = 5
+np.isclose(
+    trim_border(ssim_map1, num_pixels=5),
+    trim_border(ssim_map2, num_pixels=5),
+    atol=1e-05
+).mean()
+# >> 1.0
+
+```
 """
 
 
@@ -36,7 +102,7 @@ class SSIM3D(nn.Module):
         kernel_size: int | list[int] = 11, 
         sigma: float | list[float] = 1.5, 
         k1: float = 0.01,
-        k2: float = 0.02, 
+        k2: float = 0.03, 
         data_range: float = 1,
     ):
         super(SSIM3D, self).__init__()
@@ -64,39 +130,30 @@ class SSIM3D(nn.Module):
         
         self._nb_channel = None
     
-    def forward(self, y_pred, y) -> None:
+    def forward(self, x, y) -> torch.Tensor:
 
-        batch_size = y_pred.size(0)
+        batch_size = x.size(0)
         
         if self._nb_channel is None:
-            nb_channel = y_pred.size(1)
-            self.nb_channel = nb_channel
+            self._nb_channel = x.size(1)
             self.kernel = nn.Parameter(
-                self.kernel.expand(nb_channel, 1, 1, -1, -1),
+                self.kernel.expand(self._nb_channel, 1, 1, -1, -1),
                 requires_grad=False,
             )
 
-        kernal_inputs = torch.cat([y_pred, y, y_pred**2, y**2, y_pred*y])
-        kernel_outputs = F.conv3d(kernal_inputs, self.kernel, padding=self.pad, groups=self.nb_channel)
+        kernal_inputs = torch.cat([x, y, x**2, y**2, x*y])
+        kernel_outputs = F.conv3d(kernal_inputs, self.kernel, padding=self.pad, groups=self._nb_channel)
         del kernal_inputs
     
-        kernel_output_list = [kernel_outputs[i*batch_size:(i+1)*batch_size] for i in range(5)]
-        del kernel_outputs
+        ux, uy, uxx, uyy, uxy = [kernel_outputs[i*batch_size:(i+1)*batch_size] for i in range(5)]        
+                
+        vx = (uxx - ux * ux)
+        vy = (uyy - uy * uy)
+        vxy = (uxy - ux * uy)
+        
+        a1 = 2 * ux * uy + self.c1
+        a2 = 2 * vxy +  self.c2
+        b1 = ux**2 + uy**2 + self.c1
+        b2 = vx + vy +  self.c2
 
-        mu_pred_sq = kernel_output_list[0].pow(2)
-        mu_target_sq = kernel_output_list[1].pow(2)
-        mu_pred_target = kernel_output_list[0] * kernel_output_list[1]
-
-        sigma_pred_sq = kernel_output_list[2] - mu_pred_sq
-        sigma_target_sq = kernel_output_list[3] - mu_target_sq
-        sigma_pred_target = kernel_output_list[4] - mu_pred_target
-
-        del kernel_output_list
-
-        a1 = 2 * mu_pred_target + self.c1
-        a2 = 2 * sigma_pred_target + self.c2
-        b1 = mu_pred_sq + mu_target_sq + self.c1
-        b2 = sigma_pred_sq + sigma_target_sq + self.c2
-
-        ssim_map = (a1 * a2) / (b1 * b2)
-        return ssim_map
+        return (a1 * a2) / (b1 * b2)

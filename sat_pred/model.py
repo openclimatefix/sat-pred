@@ -156,7 +156,6 @@ class TrainingModule(pl.LightningModule):
         """Calculate losses common to train, test, and val"""
         
         losses = {}
-            
         
         # calculate mse, mae
         
@@ -164,13 +163,11 @@ class TrainingModule(pl.LightningModule):
         mae_loss = torch.nanmean(F.l1_loss(y_hat, y, reduction="none"))
         ssim_loss = torch.nanmean(1-self.ssim_func(y_hat, y)) # need to maximise SSIM
 
-        losses.update(
-            {
+        losses = {
                 "MSE": mse_loss,
                 "MAE": mae_loss,
                 "SSIM": ssim_loss,
-            }
-        )
+        }
 
         return losses
 
@@ -199,12 +196,19 @@ class TrainingModule(pl.LightningModule):
         losses = {f"{k}/train": v for k, v in losses.items()}
 
         self.log_dict(
-            {k: v.detach().cpu() for k, v in losses.items()},
+            {k: v.detach().cpu().item() for k, v in losses.items()},
             on_step=True,
-            on_epoch=False,
+            on_epoch=True,
         )
-
-        return losses[f"{self.target_loss}/train"]
+        
+        train_loss = losses[f"{self.target_loss}/train"]
+        
+        # Occasionally y will be entirely NaN and we have no training targets. So the train loss
+        # will also be NaN. In this case we return None so lightning skips this train step
+        if torch.isnan(train_loss).item():
+            return None
+        else:
+            return train_loss
 
     def validation_step(self, batch: dict, batch_idx):
         """Run validation step"""
@@ -221,10 +225,15 @@ class TrainingModule(pl.LightningModule):
         losses = self._calculate_common_losses(y, y_hat)
         losses.update(self._calculate_val_losses(y, y_hat))
 
-        losses = {f"{k}/val": v for k, v in losses.items()}
+        # Rename and convert metrics to float
+        losses = {f"{k}/val": v.item() for k, v in losses.items()}
+        
+        # Occasionally y will be entirely NaN and we have no training targets. So the val loss
+        # will also be NaN. We filter these out
+        non_nan_losses = {k: v for k, v in losses.items() if not np.isnan(v)}
 
         self.log_dict(
-            {k: v.item() for k, v in losses.items()},
+            non_nan_losses,
             on_step=False,
             on_epoch=True,
         )
@@ -232,10 +241,6 @@ class TrainingModule(pl.LightningModule):
         return
         
     def on_validation_epoch_start(self):
-        
-        print("\n VAL START")
-        
-        return
         
         val_dataset = self.trainer.val_dataloaders.dataset
         
@@ -260,17 +265,9 @@ class TrainingModule(pl.LightningModule):
                 upload_video(y[i], y_hat[i], video_name, channel_nums=[channel_num])
                 
     def on_validation_epoch_end(self):
-        print("\n VAL END")
         # Clear cache at the end of validation
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            
-    def on_train_epoch_start(self):
-        print("\n TRAIN START")
-            
-    def on_train_epoch_end(self):
-        print("\n TRAIN END")
-        
         
 
     def configure_optimizers(self):

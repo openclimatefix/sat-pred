@@ -27,6 +27,47 @@ if torch.cuda.is_available():
     activities.append(torch.profiler.ProfilerActivity.CUDA)
 
 
+    
+class MetricAccumulator:
+    """Dictionary of metrics accumulator.
+
+    A class for accumulating, and finding the mean of logging metrics when using grad
+    accumulation and the batch size is small.
+
+    Attributes:
+        _metrics (Dict[str, list[float]]): Dictionary containing lists of metrics.
+    """
+
+    def __init__(self):
+        """Dictionary of metrics accumulator."""
+        self._metrics = {}
+        
+    def __bool__(self):
+        return self._metrics != {}
+    
+    @staticmethod
+    def _dict_list_append(d1, d2):
+        for k, v in d2.items():
+            d1[k].append(v)
+
+    @staticmethod
+    def _dict_list_init(d):
+        return {k: [v] for k, v in d.items()}
+
+    def append(self, loss_dict: dict[str, float]):
+        """Append dictionary of metrics to self"""
+        if not self:
+            self._metrics = self._dict_init_list(loss_dict)
+        else:
+            self._dict_list_init(self._metrics, loss_dict)
+
+    def flush(self) -> dict[str, float]:
+        """Calculate mean of all accumulated metrics and clear"""
+        mean_metrics = {k: np.nanmean(v) for k, v in self._metrics.items()}
+        self._metrics = {}
+        return mean_metrics
+
+
 def check_nan_and_finite(X, y, y_hat):
     if X is not None:
         assert not np.isnan(X.cpu().numpy()).any(), "NaNs in X"
@@ -146,6 +187,8 @@ class TrainingModule(pl.LightningModule):
             forecast_len=self.forecast_len,
         )
         
+        self._accumulated_metrics = MetricAccumulator()
+
         self.ssim_func = SSIM3D()
 
     @staticmethod
@@ -177,6 +220,25 @@ class TrainingModule(pl.LightningModule):
         losses = {}
 
         return losses
+    
+    def _training_accumulate_log(self, losses):
+        """Internal function to accumulate training batches and log results.
+
+        This is used when accummulating grad batches. Should make the variability in logged training
+        step metrics indpendent on whether we accumulate N batches of size B or just use a larger
+        batch size of N*B with no accumulaion.
+        """
+
+        self._accumulated_metrics.append(losses)
+
+        if not self.trainer.fit_loop._should_accumulate():
+            losses = self._accumulated_metrics.flush()
+
+            self.log_dict(
+                losses,
+                on_step=True,
+                on_epoch=True,
+            )
 
     def training_step(self, batch, batch_idx):
         """Run training step"""
@@ -195,11 +257,7 @@ class TrainingModule(pl.LightningModule):
         losses = self._calculate_common_losses(y, y_hat)
         losses = {f"{k}/train": v for k, v in losses.items()}
 
-        self.log_dict(
-            {k: v.detach().cpu().item() for k, v in losses.items()},
-            on_step=True,
-            on_epoch=True,
-        )
+        self._training_accumulate_log({k: v.detach().cpu().item() for k, v in losses.items()})
         
         train_loss = losses[f"{self.target_loss}/train"]
         

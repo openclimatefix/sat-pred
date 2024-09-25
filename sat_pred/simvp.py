@@ -1,6 +1,4 @@
 """Adapted from https://github.com/A4Bio/SimVP
-
-
 """
 
 import torch

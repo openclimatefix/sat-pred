@@ -143,11 +143,7 @@ class TrainingModule(pl.LightningModule):
 
     def __init__(
         self,
-        model,
-        num_channels: int,
-        history_mins: int,
-        forecast_mins: int, 
-        sample_freq_mins: int,
+        model: torch.nn.Module,
         target_loss: float = "MAE",
         optimizer = AdamWReduceLROnPlateau(),
     ):
@@ -158,29 +154,19 @@ class TrainingModule(pl.LightningModule):
         
         assert target_loss in ["MAE", "MSE", "SSIM"]
 
+        
+        self.model = model
         self._optimizer = optimizer
 
         # Model must have lr to allow tuning
         # This setting is only used when lr is tuned with callback
         self.lr = None
-
-        self.history_minutes = history_mins
-        self.forecast_minutes = forecast_mins
-        self.interval_minutes = sample_freq_mins
-
-        self.history_len = history_mins // sample_freq_mins + 1
-        self.forecast_len = (forecast_mins) // sample_freq_mins
+    
+        self.ssim_func = SSIM3D()
         self.target_loss = target_loss
         
-        self.model = model(
-            num_channels=num_channels,
-            history_len=self.history_len,
-            forecast_len=self.forecast_len,
-        )
-        
         self._accumulated_metrics = MetricAccumulator()
-
-        self.ssim_func = SSIM3D()
+        
 
     @staticmethod
     def _minus_one_to_nan(y):

@@ -4,7 +4,7 @@ model:
   _partial_: True
 optimizer:
   _target_: sat_pred.model.AdamWReduceLROnPlateau
-  lr: 0.005
+  lr: 0.0005
 
 num_channels: 11
 history_mins: 165

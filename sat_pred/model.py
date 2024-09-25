@@ -19,7 +19,6 @@ import wandb
 from torch.utils.data import default_collate
 from sat_pred.ssim import SSIM3D
 
-
 logger = logging.getLogger(__name__)
 
 activities = [torch.profiler.ProfilerActivity.CPU]
@@ -44,22 +43,14 @@ class MetricAccumulator:
         
     def __bool__(self):
         return self._metrics != {}
-    
-    @staticmethod
-    def _dict_list_append(d1, d2):
-        for k, v in d2.items():
-            d1[k].append(v)
-
-    @staticmethod
-    def _dict_list_init(d):
-        return {k: [v] for k, v in d.items()}
 
     def append(self, loss_dict: dict[str, float]):
         """Append dictionary of metrics to self"""
         if not self:
-            self._metrics = self._dict_init_list(loss_dict)
+            self._metrics = {k: [v] for k, v in loss_dict.items()}
         else:
-            self._dict_list_init(self._metrics, loss_dict)
+            for k, v in loss_dict.items():
+                self._metrics[k].append(v)
 
     def flush(self) -> dict[str, float]:
         """Calculate mean of all accumulated metrics and clear"""
@@ -201,6 +192,7 @@ class TrainingModule(pl.LightningModule):
         losses = {}
         
         # calculate mse, mae
+        # y [N, C, T, H, W]
         
         mse_loss = torch.nanmean(F.mse_loss(y_hat, y, reduction="none"))
         mae_loss = torch.nanmean(F.l1_loss(y_hat, y, reduction="none"))
@@ -260,13 +252,15 @@ class TrainingModule(pl.LightningModule):
         self._training_accumulate_log({k: v.detach().cpu().item() for k, v in losses.items()})
         
         train_loss = losses[f"{self.target_loss}/train"]
-        
+                
         # Occasionally y will be entirely NaN and we have no training targets. So the train loss
         # will also be NaN. In this case we return None so lightning skips this train step
         if torch.isnan(train_loss).item():
+            print("\n\nTraining loss is nan\n\n")
             return None
         else:
             return train_loss
+        
 
     def validation_step(self, batch: dict, batch_idx):
         """Run validation step"""

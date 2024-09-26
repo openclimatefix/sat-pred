@@ -98,21 +98,17 @@ class MLModel(AbstractModel):
 
         return params_dict
 
-
-    
-
-
 if __name__=="__main__":
-    
+
     model = MLModel(checkpoint)
-    
+
     validate(
         model=model,
         data_path="/mnt/disks/sat_data/2022_test_nonhrv.zarr",
         wandb_project_name=WANDB_PROJECT,
         wandb_run_name=WANDB_RUN_NAME,
         batch_size = 2,
-        num_workers = 12,
+        num_workers = 6,
         batch_limit = None,
-        nan_to_num = model.data_config['nan_to_num'],
+        nan_to_num = model.data_config['nan_to_num']
     )

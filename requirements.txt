@@ -11,3 +11,4 @@ typer
 cloudcasting
 hydra-core
 matplotlib
+pyaml_env

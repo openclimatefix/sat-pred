@@ -88,7 +88,8 @@ def train(config: DictConfig):
         seed_everything(config.seed, workers=True)
 
     # Init lightning datamodule
-    datamodule: LightningDataModule = hydra.utils.instantiate(config.datamodule)
+    datamodule: LightningDataModule = hydra.utils.instantiate(config.datamodule, _convert_='all')
+    
     datamodule.zarr_path = list(datamodule.zarr_path)
 
     # Init lightning model

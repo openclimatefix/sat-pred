@@ -16,12 +16,14 @@ Clone this repo
 git clone https://github.com/openclimatefix/sat_pred.git
 ```
 
-Install the package and its dependencies
+Install this package and its dependencies
 
 ```
 cd sat_pred
 pip install -e .
 ```
+
+You will also need to install the cloudcasting package following the [instructions here](https://github.com/alan-turing-institute/cloudcasting)
 
 If you want to train the earthformer model you should clone and install the earthformer repo as well
 

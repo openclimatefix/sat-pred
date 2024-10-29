@@ -1,7 +1,6 @@
 lightning
 torch 
 numpy
-cloudcasting
 hydra-core
 matplotlib
 pyaml_env

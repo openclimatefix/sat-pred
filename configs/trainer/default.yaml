@@ -1,9 +1,11 @@
 _target_: lightning.pytorch.trainer.trainer.Trainer
 
-# set `1` to train on GPU, `0` to train on CPU only
 accelerator: auto
 devices: auto
 precision: 16
+gradient_clip_val: 0.5
+detect_anomaly: false
+overfit_batches: 0.0
 
 min_epochs: null
 max_epochs: 200
@@ -11,7 +13,7 @@ reload_dataloaders_every_n_epochs: 0
 num_sanity_val_steps: 8
 fast_dev_run: false
 
-accumulate_grad_batches: 2
-limit_train_batches: 2000
+accumulate_grad_batches: 16
+limit_train_batches: 8000
 limit_val_batches: 400
 log_every_n_steps: 50

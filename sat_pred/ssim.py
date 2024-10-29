@@ -122,13 +122,16 @@ class SSIM3D(nn.Module):
         
         self.c1 = (k1 * data_range) ** 2
         self.c2 = (k2 * data_range) ** 2
-        self.kernel = nn.Parameter(
-            data=create_gaussian_kernel(kernel_size=self.kernel_size, sigma=self.sigma),
-            requires_grad=False
-        )        
-        self.pad = [0,] + [(k - 1) // 2 for k in self.kernel_size]
+
+        self._nb_channel = 11
+
+        kernel = (
+            create_gaussian_kernel(kernel_size=self.kernel_size, sigma=self.sigma)
+            .expand(self._nb_channel, 1, 1, -1, -1)
+        )
+        #self.kernel = nn.Parameter(data=kernel, requires_grad=False)        
+        #self.pad = [0,] + [(k - 1) // 2 for k in self.kernel_size]
         
-        self._nb_channel = None
     
     def forward(self, x, y) -> torch.Tensor:
 

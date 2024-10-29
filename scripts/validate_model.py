@@ -8,9 +8,9 @@ import torch
 from pyaml_env import parse_config
 
 
-checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/u12kiwmy"
+checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/zk5vvbhk"
 WANDB_PROJECT = "cloudcasting"
-WANDB_RUN_NAME = "simVP-v1"
+WANDB_RUN_NAME = "earthformer-v1"
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -40,11 +40,15 @@ def get_model_from_checkpoints(
             raise ValueError(
                 f"Found {len(files)} checkpoints @ {checkpoint_dir_path}/epoch*.ckpt. Expected one."
             )
-        checkpoint = torch.load(files[0], map_location="cpu")
+        checkpoint = torch.load(files[0], map_location="cpu", weights_only=True)
     else:
-        checkpoint = torch.load(f"{checkpoint_dir_path}/last.ckpt", map_location="cpu")
+        checkpoint = torch.load(f"{checkpoint_dir_path}/last.ckpt", map_location="cpu", weights_only=True)
 
-    lightning_wrapped_model.load_state_dict(state_dict=checkpoint["state_dict"])
+    state_dict = checkpoint["state_dict"]
+    if 'ssim_func.kernel' in state_dict:
+        del state_dict['ssim_func.kernel']
+
+    lightning_wrapped_model.load_state_dict(state_dict=state_dict)
     
     # discard the lightning wrapper on the model
     model  = lightning_wrapped_model.model
@@ -66,7 +70,7 @@ class MLModel(AbstractModel):
         
         model, model_config, data_config = get_model_from_checkpoints(checkpoint)
         
-        super().__init__(model_config['history_mins']//15+1)
+        super().__init__(history_steps=12)
 
 
         self.model = model.to(DEVICE)
@@ -108,7 +112,7 @@ if __name__=="__main__":
         wandb_project_name=WANDB_PROJECT,
         wandb_run_name=WANDB_RUN_NAME,
         batch_size = 2,
-        num_workers = 6,
+        num_workers = 10,
         batch_limit = None,
         nan_to_num = model.data_config['nan_to_num']
     )

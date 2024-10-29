@@ -1,7 +1,7 @@
-# A starting library for future satellite prediction
+# A repo for training deterministic models to predict future satellite
 
 
-### Getting started
+## Installation
 
 Create and activate a new python environment, e.g.
 
@@ -14,7 +14,6 @@ Clone this repo
 
 ```
 git clone https://github.com/openclimatefix/sat_pred.git
-
 ```
 
 Install the package and its dependencies
@@ -24,31 +23,52 @@ cd sat_pred
 pip install -e .
 ```
 
-Create a empty directory to save the satellite data to
+If you want to train the earthformer model you should clone and install the earthformer repo as well
 
 ```
-mkdir path/to/new/satellite/directory
+cd ..
+git clone https://github.com/amazon-science/earth-forecasting-transformer.git
+cd earth-forecasting-transformer
+pip install -e .
 ```
 
-Run the command line utility to download download satellite data
+## Training
+
+You can train a model by running
 
 ```
-python scripts/download_uk_satellite.py \
-  "2020-06-01 00:00" \
-  "2020-06-30 23:55" \
-  "path/to/new/satellite/directory"
+python sat_pred/train.py
 ```
 
-The above script downloads all the satellite imagery from June 2020. The input arguments are:
- - start_date: First datetime (inclusive) to download
- - end_date: Last datetime (inclusive) to download
- - output_directory: Directory to which the satellite data should be saved
+from the root of the library. 
 
-Note that the above script creates a satellite dataset which is 21GB. On my machine it used about
-12GB of RAM at its peak and took around 30 minutes to run.
+The model and training options used are defined in the config files. The most important parts of the config files you may wish to train are:
+
+- `configs/datamodule/default.yaml`
+  - `zarr_paths` which point to your training data
+  - `train/val_period` which control the train / val split used
+  - `num_workers` and `batch_size` to suit your machine
+
+- `configs/logger/wandb.yaml`
+  - Set `project` to the project name you want to save the runs to on wandb
+
+- `configs/trainer/default.yaml`
+  - This control the parameters for the lightning Trainer. See https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api
+
+- `configs/config.yaml`
+  - Set `model_name` to the name the run will be logged under on wandb
+  - Set `defaults:model` to one of the model config filenames within `configs/model`
+
+Note that since we use hydra to build up the configs, you can change the configs from the command line when running the training job. For example
+
+```
+python sat_pred/train.py model=earthformer model_name="earthformer-v1" model.optimizer.lr=0.0002
+```
+
+will train the model defined in `configs/model/earthformer.yaml` log ther training results to wandb under the name `earthformer-v1`. It will also overwrite the learning rate of the optimiser to 0.0002.
 
 
-See the notebook `01-plot_satellite_image_example.ipynb` for loading and plotting example.
 
 
-See the notebook `02-data_loader_demo.ipynb` for getting started with the dataloader.
+
+

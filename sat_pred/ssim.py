@@ -73,7 +73,7 @@ np.isclose(
 import torch
 from torch import nn
 import torch.nn.functional as F
-
+from collections.abc import Sequence
 
 def gaussian(kernel_size: int, sigma: float) -> torch.Tensor:
     ksize_half = (kernel_size - 1) * 0.5
@@ -93,7 +93,7 @@ def create_gaussian_kernel(kernel_size: int | list[int], sigma: float | list[flo
     kernel_x = gaussian(kernel_size[0], sigma[0]).unsqueeze(dim=1)
     kernel_y = gaussian(kernel_size[1], sigma[1]).unsqueeze(dim=0)
 
-    return torch.matmul(kernel_x, kernel_y)  # (kernel_size, 1) * (1, kernel_size)
+    return torch.matmul(kernel_x, kernel_y)
 
 
 class SSIM3D(nn.Module):
@@ -111,41 +111,35 @@ class SSIM3D(nn.Module):
         assert k2 > 0
         
         if isinstance(kernel_size, int):
-            self.kernel_size = [kernel_size, kernel_size]
+            kernel_size = [kernel_size, kernel_size]
         elif isinstance(kernel_size, Sequence):
-            self.kernel_size = kernel_size
+            kernel_size = kernel_size
 
         if isinstance(sigma, float):
-            self.sigma = [sigma, sigma]
+            sigma = [sigma, sigma]
         elif isinstance(sigma, Sequence):
-            self.sigma = sigma
+            sigma = sigma
         
         self.c1 = (k1 * data_range) ** 2
         self.c2 = (k2 * data_range) ** 2
 
-        self._nb_channel = 11
+        self.kernel = nn.Parameter(
+            data=create_gaussian_kernel(kernel_size=kernel_size, sigma=sigma), 
+            requires_grad=False
+        )       
 
-        kernel = (
-            create_gaussian_kernel(kernel_size=self.kernel_size, sigma=self.sigma)
-            .expand(self._nb_channel, 1, 1, -1, -1)
-        )
-        #self.kernel = nn.Parameter(data=kernel, requires_grad=False)        
-        #self.pad = [0,] + [(k - 1) // 2 for k in self.kernel_size]
+        self.pad = [0,] + [(k - 1) // 2 for k in kernel_size]
         
     
     def forward(self, x, y) -> torch.Tensor:
 
         batch_size = x.size(0)
-        
-        if self._nb_channel is None:
-            self._nb_channel = x.size(1)
-            self.kernel = nn.Parameter(
-                self.kernel.expand(self._nb_channel, 1, 1, -1, -1),
-                requires_grad=False,
-            )
+        num_channels = x.size(1)
+
+        kernel = self.kernel.expand(self._nb_channel, 1, 1, -1, -1)
 
         kernal_inputs = torch.cat([x, y, x**2, y**2, x*y])
-        kernel_outputs = F.conv3d(kernal_inputs, self.kernel, padding=self.pad, groups=self._nb_channel)
+        kernel_outputs = F.conv3d(kernal_inputs, kernel, padding=self.pad, groups=num_channels)
         del kernal_inputs
     
         ux, uy, uxx, uyy, uxy = [kernel_outputs[i*batch_size:(i+1)*batch_size] for i in range(5)]        

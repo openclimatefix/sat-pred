@@ -7,8 +7,8 @@ zarr_path:
 history_mins: 165
 forecast_mins: 180
 sample_freq_mins: 15
-train_period: ["2019-01-01 00:00", "2021-12-31 23:55"]
-val_period: ["2022-01-01 00:00", "2022-12-31 23:55"]
+train_period: ["2019-01-01 00:00", "2021-12-31 23:55"] # [start, end]
+val_period: ["2022-01-01 00:00", "2022-12-31 23:55"]   # [start, end]
 num_workers: 6
 prefetch_factor: 2
 batch_size: 1

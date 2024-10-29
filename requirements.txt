@@ -5,9 +5,6 @@ torchvision
 numpy
 pandas
 xarray
-dask[distributed]
-zarr
-typer
 cloudcasting
 hydra-core
 matplotlib

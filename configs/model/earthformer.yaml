@@ -1,0 +1,67 @@
+_target_: sat_pred.training_module.TrainingModule
+model: 
+    _target_: sat_pred.models.earthformer_model.Earthformer
+    input_shape: [12, 372, 614, 11] # "NTHWC"
+    target_shape: [12, 372, 614, 11] # "NTHWC"
+    base_units: 128
+    block_units: null
+    scale_alpha: 1.0
+
+    enc_depth: [1, 1]
+    dec_depth: [1, 1]
+    enc_use_inter_ffn: true
+    dec_use_inter_ffn: true
+    dec_hierarchical_pos_embed: false
+
+    downsample: 2
+    downsample_type: "patch_merge"
+    upsample_type: "upsample"
+
+    num_global_vectors: 8
+    use_dec_self_global: false
+    dec_self_update_global: true
+    use_dec_cross_global: false
+    use_global_vector_ffn: false
+    use_global_self_attn: true
+    separate_global_qkv: true
+    global_dim_ratio: 1
+
+    enc_attn_patterns: "axial"
+    dec_self_attn_patterns: "axial"
+    dec_cross_attn_patterns: "cross_1x1"
+    dec_cross_last_n_frames: null
+
+    attn_drop: 0.1
+    proj_drop: 0.1
+    ffn_drop: 0.1
+    num_heads: 4
+
+    ffn_activation: "gelu"
+    gated_ffn: false
+    norm_layer: "layer_norm"
+    padding_type: "zeros"
+    pos_embed_type: "t+h+w"
+    use_relative_pos: true
+    self_attn_use_final_proj: true
+    dec_use_first_self_attn: false
+
+    z_init_method: "zeros"
+    checkpoint_level: 0
+
+    initial_downsample_type: "stack_conv"
+    initial_downsample_activation: "leaky"
+    initial_downsample_stack_conv_num_layers: 3
+    initial_downsample_stack_conv_dim_list: [16, 64, 128]
+    initial_downsample_stack_conv_downscale_list: [3, 2, 2]
+    initial_downsample_stack_conv_num_conv_list: [2, 2, 2]
+
+    attn_linear_init_mode: "0"
+    ffn_linear_init_mode: "0"
+    conv_init_mode: "0"
+    down_up_linear_init_mode: "0"
+    norm_init_mode: "0"
+
+optimizer:
+  _target_: sat_pred.optimizers.AdamWReduceLROnPlateau
+  lr: 0.0001
+target_loss: MAE

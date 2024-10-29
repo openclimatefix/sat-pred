@@ -1,10 +1,6 @@
-ocf_blosc2
 lightning
 torch 
-torchvision 
 numpy
-pandas
-xarray
 cloudcasting
 hydra-core
 matplotlib

@@ -1,14 +1,16 @@
 """Training class to wrap model and optimizer"""
 
-import lightning.pytorch as pl
+import numpy as np
 import torch
 import torch.nn.functional as F
-import wandb
-import numpy as np
-import wandb
 from torch.utils.data import default_collate
+import lightning.pytorch as pl
+
+import wandb
+
 from sat_pred.ssim import SSIM3D
 from sat_pred.optimizers import AdamWReduceLROnPlateau
+
 
     
 class MetricAccumulator:
@@ -21,14 +23,14 @@ class MetricAccumulator:
         _metrics (Dict[str, list[float]]): Dictionary containing lists of metrics.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Dictionary of metrics accumulator."""
         self._metrics = {}
         
-    def __bool__(self):
+    def __bool__(self) -> None:
         return self._metrics != {}
 
-    def append(self, loss_dict: dict[str, float]):
+    def append(self, loss_dict: dict[str, float]) -> None:
         """Append dictionary of metrics to self"""
         if not self:
             self._metrics = {k: [v] for k, v in loss_dict.items()}
@@ -43,7 +45,8 @@ class MetricAccumulator:
         return mean_metrics
 
 
-def check_nan_and_finite(X, y, y_hat):
+def check_nan_and_finite(X: torch.Tensor, y: torch.Tensor, y_hat: torch.Tensor) -> None:
+    """Function to check for NaNs and infs in tensors. Used only for debugging"""
     if X is not None:
         assert not np.isnan(X.cpu().numpy()).any(), "NaNs in X"
         assert np.isfinite(X.cpu().numpy()).all(), "infs in X"
@@ -57,7 +60,22 @@ def check_nan_and_finite(X, y, y_hat):
         assert np.isfinite(y_hat.detach().cpu().numpy()).all(), "infs in y_hat"
 
 
-def upload_video(y, y_hat, video_name, channel_nums=[8, 1], fps=1):
+def upload_video(
+        y: torch.Tensor, 
+        y_hat: torch.Tensor, 
+        video_name: str, 
+        channel_nums: list[int] = [8, 1], 
+        fps: int=4
+    ) -> None:
+    """Upload prediction video to wandb
+    
+    Args:
+        y: The true future satellite sequence
+        y_hat: The predicted future satellite sequence
+        video_name: The name under which to log the video
+        channel_nums: The channel numbers to log
+        fps: The frames per second of the video
+    """
     
     y = y.cpu().numpy()
     y_hat = y_hat.cpu().numpy()
@@ -81,11 +99,15 @@ class TrainingModule(pl.LightningModule):
     def __init__(
         self,
         model: torch.nn.Module,
-        target_loss: float = "MAE",
+        target_loss: str = "MAE",
         optimizer = AdamWReduceLROnPlateau(),
     ):
-        """tbc
+        """Lightning module to wrap model, optimizer, and training routine
 
+        Args:
+            model: The model to train
+            target_loss: The loss to minimize. One of "MAE", "MSE", "SSIM"
+            optimizer: The optimizer to use. Defaults to AdamWReduceLROnPlateau().
         """
         super().__init__()
         
@@ -100,16 +122,23 @@ class TrainingModule(pl.LightningModule):
         self._accumulated_metrics = MetricAccumulator()
     
     @staticmethod
-    def _minus_one_to_nan(y):
+    def _minus_one_to_nan(y: torch.Tensor) -> None:
+        """Replace -1 values in tensor with NaNs in-place"""
         y[y==-1] = torch.nan
         
-    def _calculate_common_losses(self, y, y_hat):
-        """Calculate losses common to train, test, and val"""
+    def _calculate_common_losses(
+            self, 
+            y: torch.Tensor, 
+            y_hat: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """Calculate losses common to train and val
+        
+        Args:
+            y: The true future satellite sequence
+            y_hat: The predicted future satellite sequence
+        """
         
         losses = {}
-        
-        # calculate mse, mae
-        # y shape: [N, C, T, H, W]
         
         mse_loss = torch.nanmean(F.mse_loss(y_hat, y, reduction="none"))
         mae_loss = torch.nanmean(F.l1_loss(y_hat, y, reduction="none"))
@@ -123,8 +152,17 @@ class TrainingModule(pl.LightningModule):
 
         return losses
 
-    def _calculate_val_losses(self, y, y_hat):
-        """Calculate additional validation losses"""
+    def _calculate_val_losses(
+            self, 
+            y: torch.Tensor, 
+            y_hat: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """Calculate additional validation losses
+        
+        Args:
+            y: The true future satellite sequence
+            y_hat: The predicted future satellite sequence
+        """
 
         losses = {}
 
@@ -149,7 +187,7 @@ class TrainingModule(pl.LightningModule):
                 on_epoch=True,
             )
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx: int) -> None | torch.Tensor:
         """Run training step"""
         
         X, y = batch
@@ -175,9 +213,8 @@ class TrainingModule(pl.LightningModule):
             return None
         else:
             return train_loss
-        
-
-    def validation_step(self, batch: dict, batch_idx):
+    
+    def validation_step(self, batch: dict, batch_idx: int):
         """Run validation step"""
         X, y = batch
         y_hat = self.model(X)
@@ -202,11 +239,10 @@ class TrainingModule(pl.LightningModule):
             on_step=False,
             on_epoch=True,
         )
-
-        return
         
     def on_validation_epoch_start(self):
         
+        # Upload videos of the first three validation samples
         val_dataset = self.trainer.val_dataloaders.dataset
         
         dates = [val_dataset.t0_times[i] for i in [0,1,2]]
@@ -225,7 +261,6 @@ class TrainingModule(pl.LightningModule):
             for channel_num in [1, 8]:
                 channel_name = val_dataset.ds.variable.values[channel_num]
                 video_name = f"val_sample_videos/{dates[i]}_{channel_name}"
-
                 upload_video(y[i], y_hat[i], video_name, channel_nums=[channel_num])
                 
     def on_validation_epoch_end(self):
@@ -234,8 +269,4 @@ class TrainingModule(pl.LightningModule):
             torch.cuda.empty_cache()
     
     def configure_optimizers(self):
-        """Configure the optimizers using learning rate found with LR finder if used"""
-        if self.lr is not None:
-            # Use learning rate found by learning rate finder callback
-            self._optimizer.lr = self.lr
         return self._optimizer(self)

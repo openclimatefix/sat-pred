@@ -54,6 +54,7 @@ The model and training options used are defined in the config files. The most im
 
 - `configs/trainer/default.yaml`
   - This control the parameters for the lightning Trainer. See https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api
+  - Note you might want to set `fast_dev_run` to `true` to aid with testing and getting set up
 
 - `configs/config.yaml`
   - Set `model_name` to the name the run will be logged under on wandb

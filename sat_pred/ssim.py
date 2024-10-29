@@ -69,20 +69,34 @@ np.isclose(
 ```
 """
 
-
 import torch
 from torch import nn
 import torch.nn.functional as F
 from collections.abc import Sequence
 
-def gaussian(kernel_size: int, sigma: float) -> torch.Tensor:
+def create_1d_gaussian_kernel(kernel_size: int, sigma: float) -> torch.Tensor:
+    """Create a 1D gaussian kernel
+    
+    Args:
+        kernel_size: The size of the kernel
+        sigma: The standard deviation
+    """
     ksize_half = (kernel_size - 1) * 0.5
     kernel = torch.linspace(-ksize_half, ksize_half, steps=kernel_size)
     gauss = torch.exp(-0.5 * (kernel / sigma).pow(2))
     return (gauss / gauss.sum())
 
 
-def create_gaussian_kernel(kernel_size: int | list[int], sigma: float | list[float]) -> torch.Tensor:
+def create_2d_gaussian_kernel(
+        kernel_size: int | list[int], 
+        sigma: float | list[float]
+    ) -> torch.Tensor:
+    """Create a 2D gaussian kernel
+    
+    Args:
+        kernel_size: The size of the kernel
+        sigma: The standard deviation of the kernel
+    """
     
     if isinstance(kernel_size, int):
         kernel_size = [kernel_size, kernel_size]
@@ -90,8 +104,8 @@ def create_gaussian_kernel(kernel_size: int | list[int], sigma: float | list[flo
     if isinstance(sigma, float):
         sigma = [sigma, sigma]
         
-    kernel_x = gaussian(kernel_size[0], sigma[0]).unsqueeze(dim=1)
-    kernel_y = gaussian(kernel_size[1], sigma[1]).unsqueeze(dim=0)
+    kernel_x = create_1d_gaussian_kernel(kernel_size[0], sigma[0]).unsqueeze(dim=1)
+    kernel_y = create_1d_gaussian_kernel(kernel_size[1], sigma[1]).unsqueeze(dim=0)
 
     return torch.matmul(kernel_x, kernel_y)
 
@@ -105,6 +119,20 @@ class SSIM3D(nn.Module):
         k2: float = 0.03, 
         data_range: float = 1,
     ):
+        """Module to compute the SSIM between two sequences of images
+
+        Args:
+            kernel_size: The size of the kernel to use for the gaussian filter
+            sigma: The standard deviation of the gaussian filter
+            k1: Algorithm parameter, K1 (small constant, see [a]).
+            k2: Algorithm parameter, K2 (small constant, see [a]).
+            data_range: The range of the data
+        
+        References:
+            [a] Wang, Z., Bovik, A. C., Sheikh, H. R., & Simoncelli, E. P. (2004). Image quality 
+                assessment: From error visibility to structural similarity. IEEE Transactions on 
+                Image Processing, 13, 600-612. DOI:10.1109/TIP.2003.819861
+        """
         super(SSIM3D, self).__init__()
         assert data_range > 0
         assert k1 > 0
@@ -124,19 +152,31 @@ class SSIM3D(nn.Module):
         self.c2 = (k2 * data_range) ** 2
 
         self.kernel = nn.Parameter(
-            data=create_gaussian_kernel(kernel_size=kernel_size, sigma=sigma), 
+            data=create_2d_gaussian_kernel(kernel_size=kernel_size, sigma=sigma), 
             requires_grad=False
         )       
 
         self.pad = [0,] + [(k - 1) // 2 for k in kernel_size]
         
     
-    def forward(self, x, y) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Compute the SSIM between two sequences of images
+        
+        
+        Args:
+            x: The predicted sequence of images
+            y: The true sequence of images
+
+        Returns:
+            The SSIM map between the two sequences which is the same dimension as the inputs
+        """
 
         batch_size = x.size(0)
         num_channels = x.size(1)
 
-        kernel = self.kernel.expand(self._nb_channel, 1, 1, -1, -1)
+        # Expand the 2D guassian kernel to run in parallel across all time steps and channels
+        # whilst only convolving across the spatial dimensions
+        kernel = self.kernel.expand(num_channels, 1, 1, -1, -1)
 
         kernal_inputs = torch.cat([x, y, x**2, y**2, x*y])
         kernel_outputs = F.conv3d(kernal_inputs, kernel, padding=self.pad, groups=num_channels)

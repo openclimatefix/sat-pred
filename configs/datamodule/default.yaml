@@ -1,15 +1,20 @@
 _target_: cloudcasting.dataset.SatelliteDataModule
 zarr_path: 
-  - /mnt/disks/sat_data/2019_training_nonhrv.zarr
-  - /mnt/disks/sat_data/2020_training_nonhrv.zarr
-  - /mnt/disks/sat_data/2021_training_nonhrv.zarr
-  - /mnt/disks/sat_data/2022_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2008_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2009_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2010_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2011_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2012_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2013_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2014_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2015_training_nonhrv.zarr
+  - /mnt/disks/sat_data_all/2016_training_nonhrv.zarr
 history_mins: 165
 forecast_mins: 180
 sample_freq_mins: 15
-train_period: ["2019-01-01 00:00", "2021-12-31 23:55"] # [start, end]
-val_period: ["2022-01-01 00:00", "2022-12-31 23:55"]   # [start, end]
-num_workers: 6
+train_period: ["2008-01-01 00:00", "2015-12-31 23:55"] # [start, end]
+val_period: ["2016-01-01 00:00", "2016-12-31 23:55"]   # [start, end]
+num_workers: 10
 prefetch_factor: 2
 batch_size: 1
 nan_to_num: true

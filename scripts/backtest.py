@@ -21,7 +21,7 @@ from glob import glob
 from numcodecs import Blosc
 
 
-checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/u12kiwmy"
+checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/ob9v9128"
 save_dir = "/mnt/disks/sat_preds/simvp_preds"
 compressor = Blosc(cname='zstd', clevel=5, shuffle=Blosc.BITSHUFFLE)
 
@@ -70,9 +70,7 @@ def get_model_from_checkpoints(
 
 
 
-# We define a new class that inherits from AbstractModel
 class MLModel:
-    """A persistence model which predicts a blury version of the most recent frame"""
 
     def __init__(self, checkpoint_dir_path: str) -> None:
 
@@ -80,7 +78,7 @@ class MLModel:
         model, model_config, data_config = get_model_from_checkpoints(checkpoint)
 
         self.model = model.to(DEVICE)
-        self.history_mins = model_config['history_mins']
+        self.history_mins = (model_config["model"]['history_len'] - 1) * 15
         self.model_config = model_config
         self.data_config = data_config
         self.checkpoint_dir_path = checkpoint_dir_path
@@ -88,7 +86,6 @@ class MLModel:
 
     def __call__(self, X):
         # The input X is a numpy array with shape (batch_size, channels, time, height, width)
-                
         X = torch.Tensor(X).to(DEVICE)
         
         with torch.no_grad():
@@ -259,8 +256,8 @@ def run_backtest(
                 "init_time": 1, 
                 "variable":-1,
                 "step":-1, 
-                "y_geostationary": -1, 
-                "x_geostationary": -1
+                "y_geostationary": 100, 
+                "x_geostationary": 100,
             }
         )
 
@@ -299,11 +296,11 @@ if __name__=="__main__":
 
     dataset = BacktestSatelliteDataset(
         zarr_path=[
-            "/mnt/disks/all_inputs/sat/2019_nonhrv.zarr",
-            "/mnt/disks/all_inputs/sat/2020_nonhrv.zarr",
-            "/mnt/disks/all_inputs/sat/2021_nonhrv.zarr",
-            "/mnt/disks/all_inputs/sat/2022_nonhrv.zarr",
-            "/mnt/disks/all_inputs/sat/2023_nonhrv.zarr",
+            "/mnt/disks/all_data/sat/2019_nonhrv.zarr",
+            "/mnt/disks/all_data/sat/2020_nonhrv.zarr",
+            "/mnt/disks/all_data/sat/2021_nonhrv.zarr",
+            "/mnt/disks/all_data/sat/2022_nonhrv.zarr",
+            "/mnt/disks/all_data/sat/2023_nonhrv.zarr",
         ],
         start_time=None, 
         end_time=None,

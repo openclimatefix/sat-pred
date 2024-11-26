@@ -8,9 +8,9 @@ import torch
 from pyaml_env import parse_config
 
 
-checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/zk5vvbhk"
+checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/ob9v9128"
 WANDB_PROJECT = "cloudcasting"
-WANDB_RUN_NAME = "earthformer-v1"
+WANDB_RUN_NAME = "simVP_2008-2016"
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -45,8 +45,6 @@ def get_model_from_checkpoints(
         checkpoint = torch.load(f"{checkpoint_dir_path}/last.ckpt", map_location="cpu", weights_only=True)
 
     state_dict = checkpoint["state_dict"]
-    if 'ssim_func.kernel' in state_dict:
-        del state_dict['ssim_func.kernel']
 
     lightning_wrapped_model.load_state_dict(state_dict=state_dict)
     
@@ -108,7 +106,7 @@ if __name__=="__main__":
 
     validate(
         model=model,
-        data_path="/mnt/disks/sat_data/2022_test_nonhrv.zarr",
+        data_path="/mnt/disks/sat_data_all/2022_test_nonhrv.zarr",
         wandb_project_name=WANDB_PROJECT,
         wandb_run_name=WANDB_RUN_NAME,
         batch_size = 2,

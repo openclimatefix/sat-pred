@@ -1,6 +1,7 @@
-lightning
-torch 
-numpy
 hydra-core
+lightning
 matplotlib
+numpy
+ocf-iam4vp @ git+https://github.com/alan-turing-institute/ocf-iam4vp.git@0.4.2
 pyaml_env
+torch

@@ -1,5 +1,5 @@
 _target_: cloudcasting.dataset.SatelliteDataModule
-zarr_path: 
+zarr_path:
   - /mnt/disks/sat_data/sat_data_all/2008_training_nonhrv.zarr
   - /mnt/disks/sat_data/sat_data_all/2009_training_nonhrv.zarr
   - /mnt/disks/sat_data/sat_data_all/2010_training_nonhrv.zarr
@@ -13,7 +13,7 @@ history_mins: 165
 forecast_mins: 180
 sample_freq_mins: 15
 train_period: ["2008-01-01 00:00", "2015-12-31 23:55"] # [start, end]
-val_period: ["2016-01-01 00:00", "2016-12-31 23:55"]   # [start, end]
+val_period: ["2016-01-01 00:00", "2016-12-31 23:55"] # [start, end]
 num_workers: 8
 prefetch_factor: 2
 batch_size: 1

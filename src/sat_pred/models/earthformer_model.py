@@ -2,9 +2,8 @@ from earthformer.cuboid_transformer.cuboid_transformer import CuboidTransformerM
 
 
 class Earthformer(CuboidTransformerModel):
-    
     def forward(self, X, verbose=False):
-        # The cloudcasting dataloader created batches of shape: 
+        # The cloudcasting dataloader created batches of shape:
         # (batch, channel, time, height, width)
         # Earthformer expects shape: (batch, time, height, width, channel)
         X = X.permute(0, 2, 3, 4, 1).contiguous()

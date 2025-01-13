@@ -1,12 +1,10 @@
-from cloudcasting.validation import validate
-from cloudcasting.models import AbstractModel
-
 import glob
 
 import hydra
 import torch
+from cloudcasting.models import AbstractModel
+from cloudcasting.validation import validate
 from pyaml_env import parse_config
-
 
 checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/ob9v9128"
 WANDB_PROJECT = "cloudcasting"
@@ -21,7 +19,7 @@ def get_model_from_checkpoints(
     val_best: bool = True,
 ):
     """Load a model from its checkpoint directory
-    
+
     Args:
         checkpoint_dir_path: Path to the checkpoint directory
         val_best: Whether to use the best performing checkpoint found during training, else uses
@@ -37,26 +35,27 @@ def get_model_from_checkpoints(
         # Only one epoch (best) saved per model
         files = glob.glob(f"{checkpoint_dir_path}/epoch*.ckpt")
         if len(files) != 1:
+            msg = f"Found {len(files)} checkpoints @ {checkpoint_dir_path}/epoch*.ckpt. Expected one."
             raise ValueError(
-                f"Found {len(files)} checkpoints @ {checkpoint_dir_path}/epoch*.ckpt. Expected one."
+                msg
             )
         checkpoint = torch.load(files[0], map_location="cpu", weights_only=True)
     else:
-        checkpoint = torch.load(f"{checkpoint_dir_path}/last.ckpt", map_location="cpu", weights_only=True)
+        checkpoint = torch.load(
+            f"{checkpoint_dir_path}/last.ckpt", map_location="cpu", weights_only=True
+        )
 
     state_dict = checkpoint["state_dict"]
 
     lightning_wrapped_model.load_state_dict(state_dict=state_dict)
-    
+
     # discard the lightning wrapper on the model
-    model  = lightning_wrapped_model.model
+    model = lightning_wrapped_model.model
 
     # Check for data config
     data_config = parse_config(f"{checkpoint_dir_path}/data_config.yaml")
-    
 
     return model, model_config, data_config
-
 
 
 # We define a new class that inherits from AbstractModel
@@ -64,34 +63,28 @@ class MLModel(AbstractModel):
     """A persistence model which predicts a blury version of the most recent frame"""
 
     def __init__(self, checkpoint_dir_path: str) -> None:
-
-        
         model, model_config, data_config = get_model_from_checkpoints(checkpoint)
-        
-        super().__init__(history_steps=12)
 
+        super().__init__(history_steps=12)
 
         self.model = model.to(DEVICE)
         self.model_config = model_config
         self.data_config = data_config
         self.checkpoint_dir_path = checkpoint_dir_path
 
-
     def forward(self, X):
         # The input X is a numpy array with shape (batch_size, channels, time, height, width)
-                
+
         X = torch.Tensor(X).to(DEVICE)
-        
+
         with torch.no_grad():
             y_hat = self.model(X).cpu().numpy()
-        
-        # Clip the values to be between 0 and 1
-        y_hat = y_hat.clip(0, 1)
 
-        return y_hat
+        # Clip the values to be between 0 and 1
+        return y_hat.clip(0, 1)
+
 
     def hyperparameters_dict(self):
-
         wandb_id = self.checkpoint_dir_path.split("/")[-1]
         params_dict = {
             "training_run_link": f"https://wandb.ai/openclimatefix/sat_pred/runs/{wandb_id}",
@@ -100,8 +93,8 @@ class MLModel(AbstractModel):
 
         return params_dict
 
-if __name__=="__main__":
 
+if __name__ == "__main__":
     model = MLModel(checkpoint)
 
     validate(
@@ -109,8 +102,8 @@ if __name__=="__main__":
         data_path="/mnt/disks/sat_data_all/2022_test_nonhrv.zarr",
         wandb_project_name=WANDB_PROJECT,
         wandb_run_name=WANDB_RUN_NAME,
-        batch_size = 2,
-        num_workers = 10,
-        batch_limit = None,
-        nan_to_num = model.data_config['nan_to_num']
+        batch_size=2,
+        num_workers=10,
+        batch_limit=None,
+        nan_to_num=model.data_config["nan_to_num"],
     )

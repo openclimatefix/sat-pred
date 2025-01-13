@@ -1,29 +1,23 @@
-# A repo for training deterministic models to predict future satellite
+![Actions Status][actions-badge]][actions-link]
 
+# Satellite Image Forecasting with Neural Networks
 
 ## Installation
 
-Create and activate a new python environment, e.g.
-
+After cloning and entering this repo, create a fresh Python environment (e.g. via `uv`, `venv`, `conda`), then install this package and its dependencies:
 ```
-conda create -n sat_pred python=3.10
-conda activate sat_pred
+pip install .
 ```
 
-Clone this repo
+### Developer installation
 
+As above, but install in editable mode with the `dev` dependencies:
 ```
-git clone https://github.com/openclimatefix/sat_pred.git
-```
-
-Install this package and its dependencies
-
-```
-cd sat_pred
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-You will also need to install the cloudcasting package following the [instructions here](https://github.com/alan-turing-institute/cloudcasting)
+
+## Training
 
 If you want to train the earthformer model you should clone and install the earthformer repo as well
 
@@ -34,15 +28,13 @@ cd earth-forecasting-transformer
 pip install -e .
 ```
 
-## Training
-
 You can train a model by running
 
 ```
-python sat_pred/train.py
+python train.py
 ```
 
-from the root of the library. 
+from the root of the library.
 
 The model and training options used are defined in the config files. The most important parts of the config files you may wish to train are:
 
@@ -71,7 +63,10 @@ python sat_pred/train.py model=earthformer model_name="earthformer-v1" model.opt
 will train the model defined in `configs/model/earthformer.yaml` log ther training results to wandb under the name `earthformer-v1`. It will also overwrite the learning rate of the optimiser to 0.0002.
 
 
-
-
-
-
+<!-- prettier-ignore-start -->
+[actions-badge]:            https://github.com/openclimatefix/sat_pred/workflows/CI/badge.svg
+[actions-link]:             https://github.com/openclimatefix/sat_pred/actions
+[pypi-link]:                https://pypi.org/project/sat_pred/
+[pypi-platforms]:           https://img.shields.io/pypi/pyversions/sat_pred
+[pypi-version]:             https://img.shields.io/pypi/v/sat_pred
+<!-- prettier-ignore-end -->

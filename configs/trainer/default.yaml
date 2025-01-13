@@ -1,7 +1,7 @@
 _target_: lightning.pytorch.trainer.trainer.Trainer
 
 accelerator: gpu
-devices: [0,] # [0,1]
+devices: [0] # [0,1]
 #strategy: ddp_spawn
 precision: 16-mixed
 gradient_clip_val: 0.5

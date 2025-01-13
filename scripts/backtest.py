@@ -5,25 +5,24 @@ try:
 except RuntimeError:
     pass
 
-from cloudcasting.dataset import load_satellite_zarrs, find_valid_t0_times
+import os
+from datetime import datetime, timedelta
+from glob import glob
 
 import hydra
-import torch
-from pyaml_env import parse_config
 import numpy as np
 import pandas as pd
+import torch
 import xarray as xr
-from datetime import datetime, timedelta
+from cloudcasting.dataset import find_valid_t0_times, load_satellite_zarrs
+from numcodecs import Blosc
+from pyaml_env import parse_config
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-import os
-from glob import glob
-from numcodecs import Blosc
-
 
 checkpoint = "/home/jamesfulton/repos/sat_pred/checkpoints/ob9v9128"
 save_dir = "/mnt/disks/sat_preds/simvp_preds"
-compressor = Blosc(cname='zstd', clevel=5, shuffle=Blosc.BITSHUFFLE)
+compressor = Blosc(cname="zstd", clevel=5, shuffle=Blosc.BITSHUFFLE)
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,7 +33,7 @@ def get_model_from_checkpoints(
     val_best: bool = True,
 ):
     """Load a model from its checkpoint directory
-    
+
     Args:
         checkpoint_dir_path: Path to the checkpoint directory
         val_best: Whether to use the best performing checkpoint found during training, else uses
@@ -50,52 +49,45 @@ def get_model_from_checkpoints(
         # Only one epoch (best) saved per model
         files = glob(f"{checkpoint_dir_path}/epoch*.ckpt")
         if len(files) != 1:
+            msg = f"Found {len(files)} checkpoints @ {checkpoint_dir_path}/epoch*.ckpt. Expected one."
             raise ValueError(
-                f"Found {len(files)} checkpoints @ {checkpoint_dir_path}/epoch*.ckpt. Expected one."
+                msg
             )
         checkpoint = torch.load(files[0], map_location="cpu")
     else:
         checkpoint = torch.load(f"{checkpoint_dir_path}/last.ckpt", map_location="cpu")
 
     lightning_wrapped_model.load_state_dict(state_dict=checkpoint["state_dict"])
-    
+
     # discard the lightning wrapper on the model
-    model  = lightning_wrapped_model.model
+    model = lightning_wrapped_model.model
 
     # Check for data config
     data_config = parse_config(f"{checkpoint_dir_path}/data_config.yaml")
-    
 
     return model, model_config, data_config
 
 
-
 class MLModel:
-
     def __init__(self, checkpoint_dir_path: str) -> None:
-
-        
         model, model_config, data_config = get_model_from_checkpoints(checkpoint)
 
         self.model = model.to(DEVICE)
-        self.history_mins = (model_config["model"]['history_len'] - 1) * 15
+        self.history_mins = (model_config["model"]["history_len"] - 1) * 15
         self.model_config = model_config
         self.data_config = data_config
         self.checkpoint_dir_path = checkpoint_dir_path
 
-
     def __call__(self, X):
         # The input X is a numpy array with shape (batch_size, channels, time, height, width)
         X = torch.Tensor(X).to(DEVICE)
-        
+
         with torch.no_grad():
             y_hat = self.model(X).cpu().numpy()
-        
-        # Clip the values to be between 0 and 1
-        y_hat = y_hat.clip(0, 1)
 
-        return y_hat
-    
+        # Clip the values to be between 0 and 1
+        return y_hat.clip(0, 1)
+
 
 
 def backtest_collate_fn(
@@ -110,9 +102,10 @@ def backtest_collate_fn(
         X_all[i] = X
         ts.append(t)
     return X_all, pd.to_datetime(ts)
-    
+
 
 DataIndex = str | datetime | pd.Timestamp | int
+
 
 class BacktestSatelliteDataset(Dataset):
     def __init__(
@@ -149,7 +142,7 @@ class BacktestSatelliteDataset(Dataset):
         )
 
         # Only do 30 minute intervals
-        self.t0_times = self.t0_times[self.t0_times.minute%30==0]
+        self.t0_times = self.t0_times[self.t0_times.minute % 30 == 0]
 
         self.history_mins = history_mins
         self.sample_freq_mins = sample_freq_mins
@@ -157,9 +150,7 @@ class BacktestSatelliteDataset(Dataset):
 
     @staticmethod
     def _find_t0_times(
-        date_range: pd.DatetimeIndex, 
-        history_mins: int, 
-        sample_freq_mins: int
+        date_range: pd.DatetimeIndex, history_mins: int, sample_freq_mins: int
     ) -> pd.DatetimeIndex:
         return find_valid_t0_times(date_range, history_mins, 0, sample_freq_mins)
 
@@ -196,14 +187,13 @@ class BacktestSatelliteDataset(Dataset):
         return self._get_datetime(t0)
 
 
-
 def run_backtest(
     model: MLModel,
     dataset: BacktestSatelliteDataset,
     batch_size: int = 1,
     num_workers: int = 0,
     batch_limit: int | None = None,
-    agg_batches: int = 1
+    agg_batches: int = 1,
 ) -> None:
     """Calculate the scoreboard metrics for the given model on the validation dataset.
 
@@ -232,31 +222,30 @@ def run_backtest(
     da_y_hats = []
     save_batch_num = 0
 
-    attrs_dict = {k:v for k,v in dataset.ds.attrs.items()}
+    attrs_dict = dict(dataset.ds.attrs.items())
     attrs_dict["model_checkpoint"] = model.checkpoint_dir_path
 
     for i, (X, t) in tqdm(enumerate(backtest_dataloader), total=loop_steps):
-        
         y_hat = model(X)
         init_times = pd.DatetimeIndex(t)
         steps = pd.timedelta_range("15min", periods=y_hat.shape[2], freq="15min")
 
         da_y_hat = xr.DataArray(
-            y_hat, 
-            dims=["init_time", "variable", "step", "y_geostationary", "x_geostationary"], 
+            y_hat,
+            dims=["init_time", "variable", "step", "y_geostationary", "x_geostationary"],
             coords={
                 "init_time": init_times,
                 "variable": dataset.ds.variable,
                 "step": steps,
                 "y_geostationary": dataset.ds.y_geostationary,
                 "x_geostationary": dataset.ds.x_geostationary,
-            }
+            },
         ).chunk(
             {
-                "init_time": 1, 
-                "variable":-1,
-                "step":-1, 
-                "y_geostationary": 100, 
+                "init_time": 1,
+                "variable": -1,
+                "step": -1,
+                "y_geostationary": 100,
                 "x_geostationary": 100,
             }
         )
@@ -264,32 +253,28 @@ def run_backtest(
         da_y_hats.append(da_y_hat)
 
         del da_y_hat
-        
-        if len(da_y_hats)==agg_batches or i==loop_steps-1:
 
+        if len(da_y_hats) == agg_batches or i == loop_steps - 1:
             da_y_hats = xr.concat(da_y_hats, dim="init_time")
 
             da_y_hats.attrs = attrs_dict
 
             da_y_hats = da_y_hats.to_dataset(name="sat_pred")
-            
+
             da_y_hats.to_zarr(
-                f"{save_dir}/part_{save_batch_num}.zarr", 
+                f"{save_dir}/part_{save_batch_num}.zarr",
                 mode="w",
-                encoding={var: {'compressor': compressor} for var in da_y_hats.data_vars},
+                encoding={var: {"compressor": compressor} for var in da_y_hats.data_vars},
             )
-            
+
             save_batch_num += 1
             da_y_hats = []
-            
 
         if batch_limit is not None and i == batch_limit:
             break
 
 
-if __name__=="__main__":
-
-
+if __name__ == "__main__":
     os.makedirs(save_dir, exist_ok=False)
 
     model = MLModel(checkpoint)
@@ -302,12 +287,12 @@ if __name__=="__main__":
             "/mnt/disks/all_data/sat/2022_nonhrv.zarr",
             "/mnt/disks/all_data/sat/2023_nonhrv.zarr",
         ],
-        start_time=None, 
+        start_time=None,
         end_time=None,
         history_mins=model.history_mins,
         sample_freq_mins=15,
-        nan_to_num=model.data_config['nan_to_num'],
-    )   
+        nan_to_num=model.data_config["nan_to_num"],
+    )
 
     run_backtest(
         model=model,

@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch.nn import functional as F
 
+
 class LossFunction(ABC):
     """Loss function"""
 
@@ -11,18 +12,19 @@ class LossFunction(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return name of the loss function"""
-        pass
 
     @abstractmethod
     def __call__(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """Return loss"""
-        pass
+
 
 class MultiscaleMAE(LossFunction):
     """Multiscale Mean Absolute Error"""
 
-    def __init__(self, scales: list[tuple[int]]=[(1,1,1),(2,4,4)]):
+    def __init__(self, scales: list[tuple[int]] | None = None):
         """Multiscale Mean Absolute Error"""
+        if scales is None:
+            scales = [(1, 1, 1), (2, 4, 4)]
         self.scales = scales
 
     @property
@@ -33,7 +35,7 @@ class MultiscaleMAE(LossFunction):
         """Return loss"""
 
         target = target.copy()
-        target[target==-1] = float('nan')
+        target[target == -1] = float("nan")
 
         loss = 0
 

@@ -1,14 +1,14 @@
 _target_: sat_pred.training_module.TrainingModule
-model: 
+model:
   from_pretrained: true
   checkpoint_dir: /home/jamesfulton/repos/sat_pred/checkpoints/ob9v9128
   val_best: true
 optimizer:
   _target_: sat_pred.optimizers.AdamWReduceLROnPlateau
   lr: 0.0005
-target_loss: 
+target_loss:
   _target_: sat_pred.loss.MultiscaleMAE
-  scales: 
+  scales:
     - [1, 1, 1]
     - [1, 4, 4]
     - [2, 8, 8]
@@ -32,5 +32,3 @@ video_crop_plots:
     i: 120
     j: 160
     s: 30
-
-

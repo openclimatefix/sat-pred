@@ -1,5 +1,5 @@
 _target_: sat_pred.training_module.TrainingModule
-model: 
+model:
   _target_: sat_pred.models.simvp_model.SimVP
   num_channels: 11
   history_len: 12
@@ -32,5 +32,3 @@ video_crop_plots:
     i: 120
     j: 160
     s: 30
-
-

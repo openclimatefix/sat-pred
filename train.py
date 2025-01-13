@@ -2,10 +2,14 @@
 
 if __name__ == "__main__":
     import torch.multiprocessing as mp
+
     mp.set_start_method("spawn", force=True)
 
 import os
+
 import hydra
+import rich.syntax
+import rich.tree
 import torch
 from lightning.pytorch import (
     Callback,
@@ -17,11 +21,8 @@ from lightning.pytorch import (
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import Logger
 from lightning.pytorch.loggers.wandb import WandbLogger
-from omegaconf import DictConfig, OmegaConf
-
-import rich.syntax
-import rich.tree
 from lightning.pytorch.utilities import rank_zero_only
+from omegaconf import DictConfig, OmegaConf
 
 from sat_pred.load_model_from_checkpoint import get_model_from_checkpoints
 from sat_pred.loss import LossFunction
@@ -29,23 +30,25 @@ from sat_pred.loss import LossFunction
 # TODO: is this line needed?
 torch.set_default_dtype(torch.float32)
 
+
 def resolve_loss_name(loss):
     """Return the desired metric to monitor based on the loss being used.
 
     The adds the option to use something like:
         monitor: "${resolve_loss_name:${model.output_quantiles}}"
     """
-    
+
     if isinstance(loss, str):
         return loss
-    else:
-        loss = hydra.utils.instantiate(loss, _convert_='all')
-        if isinstance(loss, LossFunction):
-            return loss.name
-        else:
-            raise ValueError(f"Unknown loss type: {type(loss)}")
+    loss = hydra.utils.instantiate(loss, _convert_="all")
+    if isinstance(loss, LossFunction):
+        return loss.name
+    msg = f"Unknown loss type: {type(loss)}"
+    raise ValueError(msg)
+
 
 OmegaConf.register_new_resolver("resolve_loss_name", resolve_loss_name)
+
 
 @rank_zero_only
 def print_config(
@@ -84,9 +87,8 @@ def print_config(
 
     rich.print(tree)
 
+
 @rank_zero_only
-
-
 @hydra.main(config_path="../configs/", config_name="config.yaml", version_base="1.2")
 def train(config: DictConfig):
     """Train the model using parameters in the supplied config files.
@@ -100,25 +102,21 @@ def train(config: DictConfig):
     # Set seed for random number generators in pytorch, numpy and python.random
     if "seed" in config:
         seed_everything(config.seed, workers=True)
-    
 
     if config.model.model.get("from_pretrained", False):
-
         # Load the model from the checkpoint
         torch_model, model_config, data_config = get_model_from_checkpoints(
-            config.model.model.checkpoint_dir, 
-            val_best=config.model.model.val_best
+            config.model.model.checkpoint_dir, val_best=config.model.model.val_best
         )
 
         # Overwtie the model config with the loaded model config
         config.model.model = OmegaConf.create(model_config).model
 
-        # Create a new lightning wrapped model
+        # Create a new lightning wrapped model
         model: LightningModule = hydra.utils.instantiate(config.model)
 
         # Replace the untrained model with the loaded model
         model.model = torch_model
-
 
     else:
         # Instantiate the model
@@ -155,7 +153,7 @@ def train(config: DictConfig):
                 # Need to call the .experiment property to initialise the logger
                 wandb_logger.experiment
 
-                #  skip for non-rank-0 processes: 
+                #  skip for non-rank-0 processes:
                 # see https://github.com/Lightning-AI/pytorch-lightning/issues/13166#issuecomment-1139765549
                 if wandb_logger.version is None:
                     break
@@ -173,8 +171,8 @@ def train(config: DictConfig):
                 break
 
     # Instantiate the datamodule
-    datamodule: LightningDataModule = hydra.utils.instantiate(config.datamodule, _convert_='all')
-    
+    datamodule: LightningDataModule = hydra.utils.instantiate(config.datamodule, _convert_="all")
+
     datamodule.zarr_path = list(datamodule.zarr_path)
 
     # Instantiate the trainer
@@ -187,7 +185,7 @@ def train(config: DictConfig):
 
     # Train the model
     trainer.fit(model=model, datamodule=datamodule)
-    
-    
-if __name__ == "__main__":    
+
+
+if __name__ == "__main__":
     train()

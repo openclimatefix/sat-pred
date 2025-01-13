@@ -1,5 +1,7 @@
 import torch
+
 from sat_pred.loss import LossFunction
+
 
 class AdamW:
     """AdamW optimizer"""
@@ -13,7 +15,7 @@ class AdamW:
         """Return optimizer"""
         return torch.optim.AdamW(model.parameters(), lr=self.lr, **self.kwargs)
 
-    
+
 class AdamWReduceLROnPlateau:
     """AdamW optimizer and reduce on plateau scheduler"""
 
@@ -29,17 +31,15 @@ class AdamWReduceLROnPlateau:
         self.opt_kwargs = opt_kwargs
 
     def __call__(self, model):
-
-        opt = torch.optim.AdamW(
-            model.parameters(), lr=self.lr, **self.opt_kwargs
-        )
+        opt = torch.optim.AdamW(model.parameters(), lr=self.lr, **self.opt_kwargs)
 
         if isinstance(model.target_loss, str):
             monitor = f"{model.target_loss}/val"
         elif isinstance(model.target_loss, LossFunction):
             monitor = f"{model.target_loss.name}/val"
         else:
-            raise ValueError(f"Unknown loss type: {type(model)}")
+            msg = f"Unknown loss type: {type(model)}"
+            raise ValueError(msg)
 
         sch = {
             "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(

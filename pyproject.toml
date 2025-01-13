@@ -1,0 +1,112 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sat-pred"
+version = "0.1.0"
+authors = [
+  { name = "Open Climate Fix", email = "info@openclimatefix.org" },
+]
+description = "Repository for the forecasting of satellite data, using models developed by Open Climate Fix and The Alan Turing Institute."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "lightning",
+    "torch",
+    "numpy",
+    "hydra-core",
+    "matplotlib",
+    "pyaml_env",
+    "git+https://github.com/alan-turing-institute/cloudcasting.git",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest >=6",
+  "pytest-cov >=3",
+  "pre-commit",
+]
+
+[project.urls]
+Homepage = "https://github.com/openclimatefix/sat_pred"
+"Bug Tracker" = "https://github.com/openclimatefix/sat_pred/issues"
+Discussions = "https://github.com/openclimatefix/sat_pred/discussions"
+Changelog = "https://github.com/openclimatefix/sat_pred/releases"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
+xfail_strict = true
+filterwarnings = [
+  "error",
+]
+log_cli_level = "INFO"
+testpaths = [
+  "tests",
+]
+
+[tool.coverage]
+run.source = ["sat_pred"]
+port.exclude_lines = [
+  'pragma: no cover',
+  '\.\.\.',
+  'if typing.TYPE_CHECKING:',
+]
+
+
+
+[tool.ruff]
+src = ["src"]
+exclude = []
+line-length = 100  # how long you want lines to be
+
+[tool.ruff.format]
+docstring-code-format = true  # code snippets in docstrings will be formatted
+
+[tool.ruff.lint]
+select = [
+  "E", "F", "W", # flake8
+  "B",           # flake8-bugbear
+  "I",           # isort
+  "ARG",         # flake8-unused-arguments
+  "C4",          # flake8-comprehensions
+  "EM",          # flake8-errmsg
+  "ICN",         # flake8-import-conventions
+  "ISC",         # flake8-implicit-str-concat
+  "G",           # flake8-logging-format
+  "PGH",         # pygrep-hooks
+  "PIE",         # flake8-pie
+  "PL",          # pylint
+  "PT",          # flake8-pytest-style
+  "RET",         # flake8-return
+  "RUF",         # Ruff-specific
+  "SIM",         # flake8-simplify
+  "UP",          # pyupgrade
+  "YTT",         # flake8-2020
+  "EXE",         # flake8-executable
+]
+ignore = [
+  "PLR",    # Design related pylint codes
+  "ISC001", # Conflicts with formatter
+]
+unfixable = [
+  "F401",   # Would remove unused imports
+  "F841",   # Would remove unused variables
+]
+flake8-unused-arguments.ignore-variadic-names = true  # allow unused *args/**kwargs

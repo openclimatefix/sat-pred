@@ -1,5 +1,5 @@
 _target_: sat_pred.training_module.TrainingModule
-model: 
+model:
   from_pretrained: true
   checkpoint_dir: /home/jamesfulton/repos/sat_pred/checkpoints/ob9v9128
   val_best: true
@@ -26,5 +26,3 @@ video_crop_plots:
     i: 120
     j: 160
     s: 30
-
-

@@ -4,3 +4,4 @@ numpy
 hydra-core
 matplotlib
 pyaml_env
+safetensors
